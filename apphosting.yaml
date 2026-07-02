@@ -1,0 +1,54 @@
+# Firebase App Hosting config para rudewear.
+# Los secrets viven en el MISMO Firebase project que Lafayette Market
+# (lafayette-market-d64ff) → reutilizamos los secrets ya creados.
+#
+# Los env vars NEXT_PUBLIC_* se INLINEAN en el bundle del cliente
+# durante el build → necesitan estar disponibles en BUILD (además de
+# RUNTIME para server components).
+
+runConfig:
+  # Cold start OK — subdomain de baja frecuencia (por ahora Coming
+  # Soon + admin). Subir minInstances a 1 si algún día importa.
+  minInstances: 0
+  maxInstances: 3
+  cpu: 1
+  memoryMiB: 512
+  concurrency: 80
+  timeoutSeconds: 60
+
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    secret: NEXT_PUBLIC_FIREBASE_API_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    secret: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    secret: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    secret: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    secret: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    secret: NEXT_PUBLIC_FIREBASE_APP_ID
+    availability:
+      - BUILD
+      - RUNTIME
