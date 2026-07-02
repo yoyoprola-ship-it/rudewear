@@ -1,14 +1,105 @@
 'use client';
-import { useState } from 'react';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
-
-// Coming Soon con email capture.
-// Guarda en Firestore collection `rudewear_signups` (prefijada para
-// no chocar con nada del proyecto Lafayette Market que comparte
-// infraestructura).
+import Header from './components/Header';
+import ProductCard from './components/ProductCard';
+import type { Product } from './types';
 
 export default function Home() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const activeCat = searchParams?.get('cat') || 'all';
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDocs(
+          query(
+            collection(db, 'rudewear_products'),
+            where('active', '==', true)
+          )
+        );
+        setProducts(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Product)
+        );
+      } catch (err) {
+        console.error('[home] load products failed:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (activeCat === 'all') return products;
+    return products.filter((p) => p.categoryId === activeCat);
+  }, [products, activeCat]);
+
+  return (
+    <div className="min-h-screen bg-black text-white flex flex-col">
+      <Header />
+
+      <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8">
+        {loading ? (
+          <p className="text-neutral-500 text-center py-20">Loading…</p>
+        ) : products.length === 0 ? (
+          <ComingSoon />
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-neutral-400">
+              No products in this category yet.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filtered.map((p) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
+          </div>
+        )}
+      </main>
+
+      <footer className="border-t border-neutral-900 py-6 text-center">
+        <p className="text-xs text-neutral-600">
+          A brand from{' '}
+          <a
+            href="https://lafayettelamarket.com"
+            className="underline hover:text-neutral-400 transition-colors"
+          >
+            Lafayette Market
+          </a>
+          {' · '}
+          Lafayette, LA
+        </p>
+      </footer>
+    </div>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-black text-neutral-500">
+      Loading…
+    </main>
+  );
+}
+
+// ─── Coming Soon fallback ────────────────────────────────────
+// Se muestra cuando el catálogo aún está vacío. Captura emails.
+
+function ComingSoon() {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'ok' | 'err'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -17,7 +108,6 @@ export default function Home() {
     e.preventDefault();
     if (status === 'sending') return;
     const trimmed = email.trim().toLowerCase();
-    // Validación minimalista — email debe tener @ y algo antes/después.
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
       setStatus('err');
       setErrorMsg('Enter a valid email.');
@@ -30,12 +120,11 @@ export default function Home() {
         email: trimmed,
         createdAt: serverTimestamp(),
         source: 'coming-soon',
-        userAgent:
-          typeof navigator !== 'undefined' ? navigator.userAgent : '',
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
       });
       setStatus('ok');
       setEmail('');
-    } catch (err: unknown) {
+    } catch (err) {
       console.error('[rudewear] signup failed:', err);
       setStatus('err');
       setErrorMsg('Something went wrong. Try again.');
@@ -43,73 +132,52 @@ export default function Home() {
   };
 
   return (
-    <main className="flex flex-1 min-h-screen items-center justify-center px-6 bg-black text-white">
-      <div className="w-full max-w-md flex flex-col items-center text-center">
-        {/* Wordmark */}
-        <h1 className="text-5xl sm:text-7xl font-black tracking-tighter mb-3 uppercase">
-          Rudewear
-        </h1>
+    <div className="w-full max-w-md mx-auto text-center py-20">
+      <h1 className="text-5xl sm:text-7xl font-black tracking-tighter mb-3 uppercase">
+        Rudewear
+      </h1>
+      <div className="w-16 h-1 bg-red-600 mx-auto mb-6" />
+      <p className="text-lg sm:text-xl font-medium text-neutral-300 mb-1">
+        Strong style. No apologies.
+      </p>
+      <p className="text-sm text-neutral-500 mb-10">
+        Menswear for men who own the room. Dropping soon.
+      </p>
 
-        {/* Accent bar */}
-        <div className="w-16 h-1 bg-red-600 mb-6" />
-
-        {/* Tagline */}
-        <p className="text-lg sm:text-xl font-medium text-neutral-300 mb-1">
-          Strong style. No apologies.
-        </p>
-        <p className="text-sm text-neutral-500 mb-10">
-          Menswear for men who own the room. Dropping soon.
-        </p>
-
-        {/* Email capture */}
-        {status === 'ok' ? (
-          <div className="w-full border border-red-600/40 bg-red-600/10 rounded-md py-4 px-5 text-center">
-            <p className="font-bold text-white mb-1">You&apos;re on the list.</p>
-            <p className="text-sm text-neutral-400">
-              We&apos;ll email you when the first drop hits.
-            </p>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="w-full flex flex-col gap-3">
-            <input
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              placeholder="your@email.com"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                if (status === 'err') setStatus('idle');
-              }}
-              disabled={status === 'sending'}
-              className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded-md text-white placeholder:text-neutral-600 focus:outline-none focus:border-red-600 transition-colors disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={status === 'sending'}
-              className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold uppercase tracking-wide rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {status === 'sending' ? 'Sending…' : 'Notify me'}
-            </button>
-            {status === 'err' && (
-              <p className="text-sm text-red-500 mt-1">{errorMsg}</p>
-            )}
-          </form>
-        )}
-
-        {/* Footer */}
-        <p className="mt-16 text-xs text-neutral-600">
-          A brand from{' '}
-          <a
-            href="https://lafayettelamarket.com"
-            className="underline hover:text-neutral-400 transition-colors"
+      {status === 'ok' ? (
+        <div className="w-full border border-red-600/40 bg-red-600/10 rounded py-4 px-5">
+          <p className="font-bold text-white mb-1">You&apos;re on the list.</p>
+          <p className="text-sm text-neutral-400">
+            We&apos;ll email you when the first drop hits.
+          </p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <input
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="your@email.com"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (status === 'err') setStatus('idle');
+            }}
+            disabled={status === 'sending'}
+            className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded text-white placeholder:text-neutral-600 focus:outline-none focus:border-red-600 transition-colors disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={status === 'sending'}
+            className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold uppercase tracking-wide rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Lafayette Market
-          </a>
-          {' · '}
-          Lafayette, LA
-        </p>
-      </div>
-    </main>
+            {status === 'sending' ? 'Sending…' : 'Notify me'}
+          </button>
+          {status === 'err' && (
+            <p className="text-sm text-red-500 mt-1">{errorMsg}</p>
+          )}
+        </form>
+      )}
+    </div>
   );
 }
