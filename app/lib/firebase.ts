@@ -1,13 +1,10 @@
 // Firebase client SDK — compartimos el mismo proyecto que Lafayette
-// Market para no crear infraestructura duplicada. Los emails de
-// signup de rudewear se guardan en la colección `rudewear_signups`
-// (prefijada para no chocar con nada del market).
-//
-// Env vars — copiadas de C:/Users/user/lafayette-market/.env.local
-// (todas las NEXT_PUBLIC_FIREBASE_*).
+// Market. Los datos de rudewear se aíslan por prefijo de colección
+// (rudewear_products, rudewear_categories, rudewear_signups).
 
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,6 +15,6 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Guard contra doble-init durante HMR en dev.
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const db = getFirestore(app);
+export const auth = getAuth(app);
