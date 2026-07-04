@@ -71,17 +71,27 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
   }, [open]);
 
   // Auth listener — si el user ya está logueado (venia de otra visita
-  // o del /admin), saltamos directo a details.
+  // o del /admin), saltamos directo a details + pre-cargamos address
+  // si tiene una guardada.
   useEffect(() => {
     if (!open) return;
     const unsub = onAuthChange(async (u) => {
       if (u) {
         setUser(u);
-        // Load profile — si tiene name, saltamos alias
         const profile = await getCustomerProfile(u.uid);
         if (profile?.name) {
           setExistingName(profile.name);
           setAlias(profile.name);
+          // Pre-fill saved address (si la tenía). El PlaceAutocomplete
+          // no acepta value programático — lo guardamos en state y el
+          // fee se recalcula igual porque el useEffect abajo dispara.
+          if (profile.address) {
+            setAddress(profile.address);
+            // Sin coords guardadas necesitamos "aproximar" — mandamos
+            // coords null pero el fee se calcula server-side desde el
+            // string address vía Distance Matrix, así que funciona.
+            setAddressCoords({ lat: 0, lng: 0 });
+          }
           setStep((s) => (s === 'phone' || s === 'code') ? 'details' : s);
         }
       } else {
@@ -203,7 +213,10 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
     setLoading(true);
     try {
       const digits = phone.replace(/\D/g, '');
-      await saveCustomerProfile(user.uid, cleanAlias, digits);
+      await saveCustomerProfile(user.uid, {
+        name: cleanAlias,
+        phone: digits,
+      });
       setStep('details');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save profile');
@@ -212,13 +225,34 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
     }
   };
 
-  const handleContinueToPay = () => {
-    if (!user || !feeBreakdown || !addressCoords || !selectedSlot) {
+  const handleContinueToPay = async () => {
+    if (!user || !feeBreakdown || !selectedSlot || !address) {
       setError('Complete all fields first.');
       return;
     }
-    // En Fase 3c reemplazamos esto por el checkout de Stripe real.
-    // Por ahora simulamos success para poder testear el flow.
+    // Guardá la address (y refrescá name/phone si es un signup fresh)
+    // en el user doc — persiste para próxima visita. Best-effort:
+    // si falla, no bloqueamos el continuar.
+    try {
+      if (existingName) {
+        // User ya tenía perfil — solo actualizamos address.
+        await saveCustomerProfile(user.uid, {
+          name: existingName,
+          phone: '',   // merge:true + saveCustomerProfile skipea phone si es ''
+          address,
+        });
+      } else {
+        // Signup fresh en este flow — persistimos todo.
+        await saveCustomerProfile(user.uid, {
+          name: alias,
+          phone: phone.replace(/\D/g, ''),
+          address,
+        });
+      }
+    } catch (err) {
+      console.warn('[delivery] save address failed (non-fatal):', err);
+    }
+    // En Fase 3c reemplazamos esto por Stripe payment real.
     setStep('success');
   };
 

@@ -1,20 +1,26 @@
-// Time slot generator para la tienda móvil.
-// Horario: 9 AM a 7 PM (última entrega 6 PM, para completar antes
-// del cierre). Slots horarios. Cliente elige entre hoy y mañana.
+// Time slots para la tienda móvil.
+// Horario: 9 AM a 7 PM (10 horas). Slots de 2 horas cada uno:
+//   9-11, 11-13, 13-15, 15-17, 17-19 → 5 slots por día.
+// Cliente elige entre hoy y mañana.
+// Buffer 30 min: si faltan menos de 30 min al inicio del slot, no
+// se puede seleccionar (necesitamos tiempo para preparar la visita).
 
-export const STORE_OPEN_HOUR = 9;     // 9 AM
-export const STORE_CLOSE_HOUR = 19;   // 7 PM
-export const LAST_SLOT_HOUR = 18;     // 6 PM = último slot que arranca
+export const STORE_OPEN_HOUR = 9;
+export const STORE_CLOSE_HOUR = 19;
+export const SLOT_DURATION_HOURS = 2;
+export const BOOKING_BUFFER_MINUTES = 30;
 
-/** Zona horaria de operación (Louisiana = America/Chicago). */
+/** Zona horaria de operación (Louisiana). */
 export const OPERATION_TZ = 'America/Chicago';
 
+/** Horas de inicio de cada slot. */
+export const SLOT_START_HOURS = [9, 11, 13, 15, 17];
+
 export interface TimeSlot {
-  iso: string;                   // full ISO en la zona local
-  label: string;                 // "9:00 AM"
+  iso: string;          // ISO local del INICIO del slot
+  label: string;        // "9:00 AM – 11:00 AM"
   day: 'today' | 'tomorrow';
-  hour: number;                  // 0-23
-  isPast?: boolean;              // true si el slot ya pasó (solo aplica a hoy)
+  hour: number;         // hora de inicio 0-23
 }
 
 /** Formato humano de hora en 12h con AM/PM. */
@@ -24,41 +30,45 @@ function formatHour(h: number): string {
   return `${h12}:00 ${period}`;
 }
 
-/** Devuelve slots disponibles hoy + mañana. Hoy excluye horas
- *  pasadas (si son las 3 PM, el primer slot disponible hoy es 4 PM
- *  o el próximo, siempre que llegue antes del cierre). */
+function slotLabel(startHour: number): string {
+  return `${formatHour(startHour)} – ${formatHour(startHour + SLOT_DURATION_HOURS)}`;
+}
+
+/** Genera los slots hoy + mañana. Hoy filtra los slots donde faltan
+ *  menos de BOOKING_BUFFER_MINUTES para el inicio. */
 export function getAvailableSlots(now: Date = new Date()): TimeSlot[] {
   const slots: TimeSlot[] = [];
 
-  // "Ahora" según la zona de operación — hacemos un truco simple:
-  // usamos toLocaleString para obtener la hora local del store.
+  // "Ahora" en la zona local del store.
   const localNow = new Date(
     now.toLocaleString('en-US', { timeZone: OPERATION_TZ })
   );
-  const currentHour = localNow.getHours();
-  // Bufeamos 1 hora — no aceptamos slots que arranquen en <1h.
-  const minHourToday = currentHour + 1;
 
   // TODAY
-  for (let h = STORE_OPEN_HOUR; h <= LAST_SLOT_HOUR; h++) {
-    if (h < minHourToday) continue;  // slot ya pasó / muy cercano
-    const iso = toIsoWithHour(localNow, h);
+  for (const h of SLOT_START_HOURS) {
+    const slotStart = new Date(localNow);
+    slotStart.setHours(h, 0, 0, 0);
+    const minutesUntilStart = (slotStart.getTime() - localNow.getTime()) / 60000;
+    // Debe faltar al menos BOOKING_BUFFER_MINUTES.
+    if (minutesUntilStart < BOOKING_BUFFER_MINUTES) continue;
+
     slots.push({
-      iso,
-      label: formatHour(h),
+      iso: toIsoLocal(slotStart),
+      label: slotLabel(h),
       day: 'today',
       hour: h,
     });
   }
 
-  // TOMORROW — siempre todos los slots
+  // TOMORROW — todos los slots (siempre están a más de 30 min).
   const tomorrow = new Date(localNow);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  for (let h = STORE_OPEN_HOUR; h <= LAST_SLOT_HOUR; h++) {
-    const iso = toIsoWithHour(tomorrow, h);
+  for (const h of SLOT_START_HOURS) {
+    const slotStart = new Date(tomorrow);
+    slotStart.setHours(h, 0, 0, 0);
     slots.push({
-      iso,
-      label: formatHour(h),
+      iso: toIsoLocal(slotStart),
+      label: slotLabel(h),
       day: 'tomorrow',
       hour: h,
     });
@@ -67,14 +77,8 @@ export function getAvailableSlots(now: Date = new Date()): TimeSlot[] {
   return slots;
 }
 
-/** Construye un ISO string con la fecha dada y la hora indicada
- *  interpretado en la zona local del navegador. Nota: usamos ISO
- *  local (sin Z) para simplicidad — el server lo re-interpreta como
- *  hora local del store cuando lo lee. */
-function toIsoWithHour(base: Date, hour: number): string {
-  const d = new Date(base);
-  d.setHours(hour, 0, 0, 0);
-  // ISO local con offset — formato "YYYY-MM-DDTHH:mm:ss".
+/** ISO local sin timezone: "YYYY-MM-DDTHH:mm:ss". */
+function toIsoLocal(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return (
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
@@ -82,7 +86,7 @@ function toIsoWithHour(base: Date, hour: number): string {
   );
 }
 
-/** Formato humano completo de un slot: "Today 3:00 PM" o "Tomorrow 9:00 AM". */
+/** Formato humano completo: "Today · 9:00 AM – 11:00 AM". */
 export function formatSlot(slot: TimeSlot): string {
   const dayLabel = slot.day === 'today' ? 'Today' : 'Tomorrow';
   return `${dayLabel} · ${slot.label}`;
