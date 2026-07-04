@@ -64,3 +64,49 @@ export function marginPercent(p: Product): number {
 export function isLowStock(p: Product): boolean {
   return totalStock(p) < 5;
 }
+
+// ─── Delivery service ────────────────────────────────────────
+// Rudewear NO vende productos online. El cliente reserva una
+// VISITA a domicilio y solo paga por ese servicio (miles + time).
+// Los productos se pagan en persona al momento de la visita.
+
+/** Selección del cliente por producto — con qué talla lo quiere ver. */
+export interface DeliveryItem {
+  productId: string;
+  productName: string;             // snapshot al momento de la reserva
+  size: Size | '';                 // '' si "cualquier talla"
+  sellPrice: number;               // snapshot al momento de la reserva
+}
+
+export type DeliveryStatus =
+  | 'requested'        // creado, hold en Stripe autorizado
+  | 'confirmed'        // admin confirmó, va camino
+  | 'delivered'        // completó la visita, hold capturado
+  | 'cancelled';       // cancelada, hold liberado
+
+export interface Delivery {
+  id: string;
+  customerName: string;
+  customerPhone: string;           // 10 dígitos US
+  customerEmail?: string;
+  address: string;                 // string completa (Google formatted)
+  addressLat: number;
+  addressLng: number;
+  addressZip?: string;
+  distanceMiles: number;           // desde DELIVERY_ORIGIN
+  distanceMinutes: number;         // driving time one-way
+  items: DeliveryItem[];           // productos que el cliente quiere ver
+  notes: string;                   // instrucciones libres del cliente
+  preferredDate?: string;          // ISO date preferida (opcional)
+  // Money
+  deliveryFee: number;             // = miles*1 + (minutes/60)*20 + 3.30
+  paymentIntentId: string;
+  paymentStatus: 'authorized' | 'captured' | 'canceled' | 'failed';
+  status: DeliveryStatus;
+  createdAt?: FirestoreTimestampish;
+  updatedAt?: FirestoreTimestampish;
+  confirmedAt?: FirestoreTimestampish;
+  deliveredAt?: FirestoreTimestampish;
+  cancelledAt?: FirestoreTimestampish;
+}
+

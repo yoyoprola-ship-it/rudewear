@@ -52,3 +52,44 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  # ─── Google Maps (compartidos con Lafayette Market) ────────
+  - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    secret: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: GOOGLE_MAPS_SERVER_KEY
+    secret: GOOGLE_MAPS_SERVER_KEY
+    availability:
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_DELIVERY_ORIGIN
+    secret: NEXT_PUBLIC_DELIVERY_ORIGIN
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # ─── Stripe (compartidos — misma cuenta que Lafayette) ─────
+  - variable: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    secret: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: STRIPE_SECRET_KEY
+    secret: STRIPE_SECRET_KEY
+    availability:
+      - RUNTIME
+
+  - variable: STRIPE_WEBHOOK_SECRET
+    secret: STRIPE_WEBHOOK_SECRET
+    availability:
+      - RUNTIME
+
+  # ─── Internal server-to-server secret ──────────────────────
+  - variable: INTERNAL_API_SECRET
+    secret: INTERNAL_API_SECRET
+    availability:
+      - RUNTIME
