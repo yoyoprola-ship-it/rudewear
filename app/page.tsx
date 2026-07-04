@@ -6,6 +6,7 @@ import { addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import Header from './components/Header';
 import ProductCard from './components/ProductCard';
+import DeliveryModal from './components/DeliveryModal';
 import type { Product } from './types';
 
 export default function Home() {
@@ -21,6 +22,7 @@ function HomeContent() {
   const activeCat = searchParams?.get('cat') || 'all';
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -63,13 +65,33 @@ function HomeContent() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filtered.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {filtered.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+
+            {/* CTA — Request delivery */}
+            <div className="mt-16 border border-red-800/40 bg-red-950/20 rounded p-6 sm:p-8 text-center">
+              <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight mb-2">
+                We bring the store to you
+              </h2>
+              <p className="text-neutral-400 max-w-md mx-auto mb-6 text-sm">
+                Book a home visit and we&apos;ll roll up with a selection you can try on. Pay for products in person at your door.
+              </p>
+              <button
+                onClick={() => setDeliveryOpen(true)}
+                className="px-8 py-3 bg-red-600 hover:bg-red-700 rounded font-bold uppercase tracking-wide"
+              >
+                Request delivery service
+              </button>
+            </div>
+          </>
         )}
       </main>
+
+      <DeliveryModal open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />
 
       <footer className="border-t border-neutral-900 py-6 text-center">
         <p className="text-xs text-neutral-600">

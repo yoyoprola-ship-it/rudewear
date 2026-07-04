@@ -69,14 +69,9 @@ export function isLowStock(p: Product): boolean {
 // Rudewear NO vende productos online. El cliente reserva una
 // VISITA a domicilio y solo paga por ese servicio (miles + time).
 // Los productos se pagan en persona al momento de la visita.
-
-/** Selección del cliente por producto — con qué talla lo quiere ver. */
-export interface DeliveryItem {
-  productId: string;
-  productName: string;             // snapshot al momento de la reserva
-  size: Size | '';                 // '' si "cualquier talla"
-  sellPrice: number;               // snapshot al momento de la reserva
-}
+// La tienda móvil abre 9 AM a 7 PM; el cliente elige hora entre
+// hoy y mañana en slots horarios de 9-18 (18 = última entrega,
+// alcanza para completar antes del cierre a las 19).
 
 export type DeliveryStatus =
   | 'requested'        // creado, hold en Stripe autorizado
@@ -86,18 +81,19 @@ export type DeliveryStatus =
 
 export interface Delivery {
   id: string;
-  customerName: string;
-  customerPhone: string;           // 10 dígitos US
-  customerEmail?: string;
+  userId: string;                  // uid de Firebase Auth del cliente
+  customerName: string;            // alias del user doc
+  customerPhone: string;           // 10 dígitos US (verificado por SMS)
   address: string;                 // string completa (Google formatted)
   addressLat: number;
   addressLng: number;
   addressZip?: string;
   distanceMiles: number;           // desde DELIVERY_ORIGIN
   distanceMinutes: number;         // driving time one-way
-  items: DeliveryItem[];           // productos que el cliente quiere ver
   notes: string;                   // instrucciones libres del cliente
-  preferredDate?: string;          // ISO date preferida (opcional)
+  // Fecha/hora seleccionada por el cliente. ISO string en LA tz.
+  scheduledAt: string;             // e.g., '2026-05-28T15:00:00-05:00'
+  scheduledDay: 'today' | 'tomorrow'; // etiqueta legible
   // Money
   deliveryFee: number;             // = miles*1 + (minutes/60)*20 + 3.30
   paymentIntentId: string;

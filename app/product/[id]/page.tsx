@@ -6,6 +6,7 @@ import { collection, doc, getDoc, getDocs, orderBy, query, where } from 'firebas
 import { db } from '@/app/lib/firebase';
 import Header from '@/app/components/Header';
 import ProductCard from '@/app/components/ProductCard';
+import DeliveryModal from '@/app/components/DeliveryModal';
 import { SIZES, type Category, type Product, totalStock } from '@/app/types';
 
 // Detail card cuando el cliente hace click en un producto del grid.
@@ -22,6 +23,7 @@ export default function ProductDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
 
   useEffect(() => {
     if (!params?.id) return;
@@ -226,17 +228,20 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            {/* How to buy — reemplaza el "Add to cart" tradicional */}
+            {/* How to buy */}
             <div className="border-t border-neutral-800 pt-6">
               <p className="text-xs font-bold uppercase tracking-widest text-neutral-500 mb-2">
                 How to buy
               </p>
-              <p className="text-neutral-300 leading-relaxed mb-2">
-                Rudewear ships direct to your door through our home delivery service.
+              <p className="text-neutral-300 leading-relaxed mb-4">
+                Book a home visit — we bring a selection you can try on. Pay for products in person at your door.
               </p>
-              <p className="text-sm text-neutral-500">
-                Reserve your size and we&apos;ll bring it to you. Details coming soon.
-              </p>
+              <button
+                onClick={() => setDeliveryOpen(true)}
+                className="w-full px-6 py-3 bg-red-600 hover:bg-red-700 rounded font-bold uppercase tracking-wide"
+              >
+                Request delivery service
+              </button>
             </div>
           </div>
         </div>
@@ -255,6 +260,8 @@ export default function ProductDetailPage() {
           </section>
         )}
       </main>
+
+      <DeliveryModal open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />
 
       <footer className="border-t border-neutral-900 py-6 text-center">
         <p className="text-xs text-neutral-600">
