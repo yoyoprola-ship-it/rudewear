@@ -134,6 +134,7 @@ export default function ProductListPage() {
               <tr>
                 <th className="text-left px-4 py-2 font-bold">Product</th>
                 <th className="text-left px-4 py-2 font-bold">Category</th>
+                <th className="text-center px-4 py-2 font-bold">Supplier</th>
                 <th className="text-right px-4 py-2 font-bold">Stock</th>
                 <th className="text-right px-4 py-2 font-bold">Cost</th>
                 <th className="text-right px-4 py-2 font-bold">Sell</th>
@@ -178,6 +179,29 @@ export default function ProductListPage() {
                     </td>
                     <td className="px-4 py-3 text-neutral-400">
                       {cat?.name || <span className="text-neutral-600 italic">missing</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {/* Supplier — link clickeable si existe, dash si no.
+                          Stop propagation por si el <tr> gana onClick en el futuro. */}
+                      {p.supplierUrl && p.supplierUrl.trim().length > 0 ? (
+                        <a
+                          href={p.supplierUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title={p.supplierUrl}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 border border-red-900 text-red-500 hover:bg-red-950 hover:text-red-400 rounded text-[10px] font-bold uppercase tracking-wider transition-colors"
+                        >
+                          🔗 URL
+                        </a>
+                      ) : (
+                        <span
+                          title="No supplier URL — add one so you can re-order this product"
+                          className="text-neutral-700 text-xs"
+                        >
+                          —
+                        </span>
+                      )}
                     </td>
                     <td
                       className={`px-4 py-3 text-right font-bold ${
