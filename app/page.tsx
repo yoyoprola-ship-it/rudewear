@@ -40,9 +40,17 @@ function HomeContent() {
           ),
           getDocs(collection(db, 'rudewear_categories')),
         ]);
-        setProducts(
-          prodSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Product)
+        // Fisher-Yates shuffle — orden aleatorio cada refresh para que
+        // ningún producto quede "enterrado" al final. La filter por
+        // categoría preserva este orden (filter no re-ordena).
+        const shuffled = prodSnap.docs.map(
+          (d) => ({ id: d.id, ...d.data() }) as Product
         );
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        setProducts(shuffled);
         const catMap = new Map<string, string>();
         catSnap.docs.forEach((d) => {
           const data = d.data() as Category;
