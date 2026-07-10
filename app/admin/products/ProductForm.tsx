@@ -6,6 +6,24 @@ import {
   uploadProductImage,
 } from '@/app/lib/imageUpload';
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
   addDoc,
   collection,
   doc,
@@ -174,17 +192,31 @@ export default function ProductForm({ initial, onSaved }: ProductFormProps) {
     if (url) deleteProductImage(url);
   };
 
-  /** Mueve la imagen idx en direction (-1 izquierda, +1 derecha).
-   *  Al llegar a idx=0 la imagen se vuelve la Cover automáticamente. */
-  const moveImage = (idx: number, direction: -1 | 1) => {
+  /** Handler de dnd-kit — recibe active + over items y reordena. */
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
     setF((prev) => {
-      const nextIdx = idx + direction;
-      if (nextIdx < 0 || nextIdx >= prev.images.length) return prev;
-      const images = [...prev.images];
-      [images[idx], images[nextIdx]] = [images[nextIdx], images[idx]];
-      return { ...prev, images };
+      const oldIdx = prev.images.findIndex((u) => u === active.id);
+      const newIdx = prev.images.findIndex((u) => u === over.id);
+      if (oldIdx === -1 || newIdx === -1) return prev;
+      return { ...prev, images: arrayMove(prev.images, oldIdx, newIdx) };
     });
   };
+
+  // Sensors — mouse (con delay pequeño para no confundir con click)
+  // + touch (con delay para no confundir con scroll) + keyboard (a11y).
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },   // 5px de drag antes de activar
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const dismissUploadError = (id: string) => {
     setUploading((prev) => prev.filter((u) => u.id !== id));
@@ -567,66 +599,34 @@ export default function ProductForm({ initial, onSaved }: ProductFormProps) {
           </div>
         )}
 
-        {/* Grid de imágenes subidas.
-            - object-contain: el thumbnail muestra la imagen completa
-              sin cropear (matchea el comportamiento de la tienda).
-            - Cover badge en la 1ª: es la que aparece en el grid.
-            - Arrows ← → para reordenar. Poner una imagen en pos 0
-              la vuelve la Cover automáticamente.  */}
+        {/* Grid de imágenes con drag & drop (dnd-kit). Click sostenido
+            + arrastrar para reordenar a cualquier posición. Funciona
+            en mouse y touch (mobile requiere long-press 200ms). La
+            primera imagen es la Cover — arrastrando otra al slot 0
+            se vuelve la nueva Cover automáticamente. */}
         {f.images.length > 0 && (
           <div className="mt-4">
             <p className="text-xs text-neutral-500 mb-2">
-              Use ← → to reorder. The first image is the cover shown in the store.
+              Drag images to reorder. The first is the cover shown in the store.
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {f.images.map((url, idx) => (
-                <div
-                  key={idx}
-                  className="relative aspect-square rounded border border-neutral-800 overflow-hidden bg-black"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={url}
-                    alt=""
-                    className="w-full h-full object-contain"
-                  />
-                  {idx === 0 && (
-                    <span className="absolute top-1 left-1 bg-red-600 text-white text-[10px] font-bold uppercase px-1.5 py-0.5 rounded z-10">
-                      Cover
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeImage(idx)}
-                    className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white w-6 h-6 rounded flex items-center justify-center text-xs z-10"
-                    aria-label="Remove"
-                  >
-                    ×
-                  </button>
-                  {/* Reorder controls al pie */}
-                  <div className="absolute bottom-1 left-1 right-1 flex justify-between gap-1 z-10">
-                    <button
-                      type="button"
-                      onClick={() => moveImage(idx, -1)}
-                      disabled={idx === 0}
-                      className="w-7 h-7 bg-black/70 hover:bg-red-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded flex items-center justify-center text-sm font-bold transition-colors"
-                      aria-label="Move earlier"
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveImage(idx, 1)}
-                      disabled={idx === f.images.length - 1}
-                      className="w-7 h-7 bg-black/70 hover:bg-red-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded flex items-center justify-center text-sm font-bold transition-colors"
-                      aria-label="Move later"
-                    >
-                      →
-                    </button>
-                  </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext items={f.images} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {f.images.map((url, idx) => (
+                    <SortableImage
+                      key={url}
+                      url={url}
+                      isCover={idx === 0}
+                      onRemove={() => removeImage(idx)}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+              </SortableContext>
+            </DndContext>
           </div>
         )}
       </Section>
@@ -721,6 +721,75 @@ function Field({
       </label>
       {children}
       {hint && <p className="text-xs text-neutral-600 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+// ─── SortableImage ───────────────────────────────────────────
+// Thumbnail draggable via dnd-kit. La imagen es el drag handle
+// (todo el card). El botón × NO propaga el mouseDown para no
+// competir con el drag.
+
+function SortableImage({
+  url,
+  isCover,
+  onRemove,
+}: {
+  url: string;
+  isCover: boolean;
+  onRemove: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: url });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 20 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`relative aspect-square rounded border overflow-hidden bg-black touch-none cursor-grab active:cursor-grabbing ${
+        isDragging ? 'border-red-600 shadow-lg shadow-red-900/50' : 'border-neutral-800'
+      }`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt=""
+        draggable={false}
+        className="w-full h-full object-contain pointer-events-none"
+      />
+      {isCover && (
+        <span className="absolute top-1 left-1 bg-red-600 text-white text-[10px] font-bold uppercase px-1.5 py-0.5 rounded z-10">
+          Cover
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white w-6 h-6 rounded flex items-center justify-center text-xs z-10"
+        aria-label="Remove"
+      >
+        ×
+      </button>
     </div>
   );
 }
