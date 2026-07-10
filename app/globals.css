@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
+/* Tema — Rudewear es dark-only por diseño. NO usamos prefers-color-
+   scheme para variar; el fondo es siempre negro. Antes el default
+   era #ffffff blanco → si algún elemento escapaba horizontalmente,
+   se veía una banda blanca detrás del contenido. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #000000;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -12,15 +16,21 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Bloquear scroll horizontal a nivel de página. Si algún componente
+   accidentalmente overflow-ea (imagen ancha, elemento posicionado),
+   el body corta en vez de crear una barra horizontal + banda blanca
+   visible.
+   NO ponemos overflow-x:hidden en <html> porque rompe el
+   position: sticky del Header en algunos browsers. Solo en <body>. */
+html {
+  background: var(--background);
+  color: var(--foreground);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  overflow-x: hidden;
+  max-width: 100vw;
   font-family: Arial, Helvetica, sans-serif;
 }
