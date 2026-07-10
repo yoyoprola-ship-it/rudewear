@@ -1,6 +1,10 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  deleteProductImage,
+  uploadProductImage,
+} from '@/app/lib/imageUpload';
 import {
   addDoc,
   collection,
@@ -65,7 +69,14 @@ export default function ProductForm({ initial, onSaved }: ProductFormProps) {
   const [newCatName, setNewCatName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [imageInput, setImageInput] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState<Array<{
+    id: string;
+    name: string;
+    progress: number;
+    error?: string;
+  }>>([]);
+  const [dragging, setDragging] = useState(false);
 
   const [f, setF] = useState<FormState>(() => {
     if (!initial) return empty;
@@ -126,18 +137,61 @@ export default function ProductForm({ initial, onSaved }: ProductFormProps) {
     }));
   };
 
-  const addImage = () => {
-    const url = imageInput.trim();
-    if (!url) return;
-    setF((prev) => ({ ...prev, images: [...prev.images, url] }));
-    setImageInput('');
+  const handleFilesSelected = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+
+    for (const file of list) {
+      const uploadId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      setUploading((prev) => [
+        ...prev,
+        { id: uploadId, name: file.name, progress: 0 },
+      ]);
+      try {
+        const url = await uploadProductImage(file, (percent) => {
+          setUploading((prev) =>
+            prev.map((u) => (u.id === uploadId ? { ...u, progress: percent } : u))
+          );
+        });
+        setF((prev) => ({ ...prev, images: [...prev.images, url] }));
+        setUploading((prev) => prev.filter((u) => u.id !== uploadId));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Upload failed';
+        setUploading((prev) =>
+          prev.map((u) => (u.id === uploadId ? { ...u, error: msg } : u))
+        );
+      }
+    }
   };
 
-  const removeImage = (idx: number) => {
+  const removeImage = async (idx: number) => {
+    const url = f.images[idx];
     setF((prev) => ({
       ...prev,
       images: prev.images.filter((_, i) => i !== idx),
     }));
+    // Best-effort cleanup del storage — no bloquea la UI.
+    if (url) deleteProductImage(url);
+  };
+
+  const dismissUploadError = (id: string) => {
+    setUploading((prev) => prev.filter((u) => u.id !== id));
+  };
+
+  const handleFilePickerClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(true);
+  };
+  const handleDragLeave = () => setDragging(false);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) handleFilesSelected(files);
   };
 
   const handleCreateCategory = async () => {
@@ -426,27 +480,89 @@ export default function ProductForm({ initial, onSaved }: ProductFormProps) {
       </Section>
 
       {/* ─── IMAGES ─── */}
-      <Section title="Images" hint="Paste image URLs. First image is the cover.">
-        <div className="flex gap-2 mb-3">
-          <input
-            type="text"
-            placeholder="https://…"
-            value={imageInput}
-            onChange={(e) => setImageInput(e.target.value)}
-            className={inputCls}
-          />
-          <button
-            type="button"
-            onClick={addImage}
-            className="px-4 py-2 border border-neutral-700 hover:border-neutral-500 rounded text-sm font-bold uppercase whitespace-nowrap"
-          >
-            + Add
-          </button>
+      <Section title="Images" hint="Upload from your device. First image is the cover.">
+        {/* Hidden file input triggered by button/drop zone. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) handleFilesSelected(e.target.files);
+            // reset para que el mismo file pueda re-seleccionarse.
+            e.target.value = '';
+          }}
+        />
+
+        {/* Drop zone */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={handleFilePickerClick}
+          className={`cursor-pointer border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+            dragging
+              ? 'border-red-600 bg-red-950/20'
+              : 'border-neutral-800 hover:border-neutral-600 bg-neutral-900/50'
+          }`}
+        >
+          <div className="text-3xl mb-2">📸</div>
+          <p className="text-sm text-neutral-300 font-bold mb-1">
+            Click to select or drag images here
+          </p>
+          <p className="text-xs text-neutral-500">
+            JPG · PNG · WebP · HEIC — up to 10 MB each
+          </p>
         </div>
+
+        {/* Progress indicators — uploads en curso */}
+        {uploading.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {uploading.map((u) => (
+              <div
+                key={u.id}
+                className="flex items-center gap-3 px-3 py-2 bg-neutral-900 border border-neutral-800 rounded text-sm"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-neutral-300 truncate">{u.name}</p>
+                  {u.error ? (
+                    <p className="text-xs text-red-500">{u.error}</p>
+                  ) : (
+                    <div className="mt-1 w-full h-1 bg-neutral-800 rounded overflow-hidden">
+                      <div
+                        className="h-full bg-red-600 transition-all"
+                        style={{ width: `${u.progress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <span className="text-xs text-neutral-500 flex-shrink-0">
+                  {u.error ? 'Failed' : `${u.progress}%`}
+                </span>
+                {u.error && (
+                  <button
+                    type="button"
+                    onClick={() => dismissUploadError(u.id)}
+                    className="text-neutral-500 hover:text-white"
+                    aria-label="Dismiss"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Grid de imágenes subidas */}
         {f.images.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
             {f.images.map((url, idx) => (
-              <div key={idx} className="relative aspect-square rounded border border-neutral-800 overflow-hidden">
+              <div
+                key={idx}
+                className="relative aspect-square rounded border border-neutral-800 overflow-hidden group"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={url} alt="" className="w-full h-full object-cover" />
                 {idx === 0 && (
@@ -457,7 +573,7 @@ export default function ProductForm({ initial, onSaved }: ProductFormProps) {
                 <button
                   type="button"
                   onClick={() => removeImage(idx)}
-                  className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white w-6 h-6 rounded flex items-center justify-center text-xs"
+                  className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white w-6 h-6 rounded flex items-center justify-center text-xs opacity-70 group-hover:opacity-100 transition-opacity"
                   aria-label="Remove"
                 >
                   ×
