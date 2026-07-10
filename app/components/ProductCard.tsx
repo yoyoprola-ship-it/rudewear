@@ -53,13 +53,16 @@ export default function ProductCard({ product, categoryName }: ProductCardProps)
 
       {/* Info */}
       <div className="p-3">
-        <p className="text-sm font-bold text-white line-clamp-2 min-h-[2.6rem]">
+        {/* Sin min-h: si el nombre es de 1 línea, no reservamos espacio
+            para 2 → no queda una banda vacía debajo. line-clamp-2 sigue
+            limitando a 2 líneas máximo si es largo. */}
+        <p className="text-sm font-bold text-white line-clamp-2">
           {product.name}
         </p>
 
         {/* Categoría (izquierda) + tallas disponibles (derecha) en 1 línea.
             Category trunca si es larga; sizes flex-shrink-0 no se aplasta. */}
-        <div className="flex items-center justify-between gap-2 my-2">
+        <div className="flex items-center justify-between gap-2 mt-1 mb-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 truncate">
             {categoryName || '—'}
           </span>
