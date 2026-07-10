@@ -174,6 +174,18 @@ export default function ProductForm({ initial, onSaved }: ProductFormProps) {
     if (url) deleteProductImage(url);
   };
 
+  /** Mueve la imagen idx en direction (-1 izquierda, +1 derecha).
+   *  Al llegar a idx=0 la imagen se vuelve la Cover automáticamente. */
+  const moveImage = (idx: number, direction: -1 | 1) => {
+    setF((prev) => {
+      const nextIdx = idx + direction;
+      if (nextIdx < 0 || nextIdx >= prev.images.length) return prev;
+      const images = [...prev.images];
+      [images[idx], images[nextIdx]] = [images[nextIdx], images[idx]];
+      return { ...prev, images };
+    });
+  };
+
   const dismissUploadError = (id: string) => {
     setUploading((prev) => prev.filter((u) => u.id !== id));
   };
@@ -555,31 +567,66 @@ export default function ProductForm({ initial, onSaved }: ProductFormProps) {
           </div>
         )}
 
-        {/* Grid de imágenes subidas */}
+        {/* Grid de imágenes subidas.
+            - object-contain: el thumbnail muestra la imagen completa
+              sin cropear (matchea el comportamiento de la tienda).
+            - Cover badge en la 1ª: es la que aparece en el grid.
+            - Arrows ← → para reordenar. Poner una imagen en pos 0
+              la vuelve la Cover automáticamente.  */}
         {f.images.length > 0 && (
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {f.images.map((url, idx) => (
-              <div
-                key={idx}
-                className="relative aspect-square rounded border border-neutral-800 overflow-hidden group"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="w-full h-full object-cover" />
-                {idx === 0 && (
-                  <span className="absolute top-1 left-1 bg-red-600 text-white text-[10px] font-bold uppercase px-1.5 py-0.5 rounded">
-                    Cover
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeImage(idx)}
-                  className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white w-6 h-6 rounded flex items-center justify-center text-xs opacity-70 group-hover:opacity-100 transition-opacity"
-                  aria-label="Remove"
+          <div className="mt-4">
+            <p className="text-xs text-neutral-500 mb-2">
+              Use ← → to reorder. The first image is the cover shown in the store.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {f.images.map((url, idx) => (
+                <div
+                  key={idx}
+                  className="relative aspect-square rounded border border-neutral-800 overflow-hidden bg-black"
                 >
-                  ×
-                </button>
-              </div>
-            ))}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt=""
+                    className="w-full h-full object-contain"
+                  />
+                  {idx === 0 && (
+                    <span className="absolute top-1 left-1 bg-red-600 text-white text-[10px] font-bold uppercase px-1.5 py-0.5 rounded z-10">
+                      Cover
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeImage(idx)}
+                    className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white w-6 h-6 rounded flex items-center justify-center text-xs z-10"
+                    aria-label="Remove"
+                  >
+                    ×
+                  </button>
+                  {/* Reorder controls al pie */}
+                  <div className="absolute bottom-1 left-1 right-1 flex justify-between gap-1 z-10">
+                    <button
+                      type="button"
+                      onClick={() => moveImage(idx, -1)}
+                      disabled={idx === 0}
+                      className="w-7 h-7 bg-black/70 hover:bg-red-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded flex items-center justify-center text-sm font-bold transition-colors"
+                      aria-label="Move earlier"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveImage(idx, 1)}
+                      disabled={idx === f.images.length - 1}
+                      className="w-7 h-7 bg-black/70 hover:bg-red-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded flex items-center justify-center text-sm font-bold transition-colors"
+                      aria-label="Move later"
+                    >
+                      →
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </Section>

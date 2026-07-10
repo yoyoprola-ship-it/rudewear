@@ -120,7 +120,8 @@ export default function ProductDetailPage() {
         </nav>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
-          {/* Image gallery */}
+          {/* Image gallery — object-contain para NUNCA cropear.
+              Ratio del contenedor 4:5 matchea 2000x2500. */}
           <div>
             <div className="aspect-[4/5] bg-neutral-900 rounded overflow-hidden border border-neutral-800 mb-3">
               {cover ? (
@@ -128,7 +129,7 @@ export default function ProductDetailPage() {
                 <img
                   src={cover}
                   alt={product.name}
-                  className={`w-full h-full object-cover ${
+                  className={`w-full h-full object-contain ${
                     soldOut ? 'grayscale opacity-70' : ''
                   }`}
                 />
@@ -144,14 +145,14 @@ export default function ProductDetailPage() {
                   <button
                     key={idx}
                     onClick={() => setActiveImage(idx)}
-                    className={`aspect-square rounded overflow-hidden border-2 transition-colors ${
+                    className={`aspect-square rounded overflow-hidden border-2 transition-colors bg-neutral-900 ${
                       activeImage === idx
                         ? 'border-red-600'
                         : 'border-neutral-800 hover:border-neutral-600'
                     }`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <img src={url} alt="" className="w-full h-full object-contain" />
                   </button>
                 ))}
               </div>
