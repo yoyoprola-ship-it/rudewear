@@ -2,10 +2,19 @@
 import Link from 'next/link';
 import { SIZES, type Product, totalStock } from '@/app/types';
 
-// Card del grid — imagen, nombre, precio, chips de tallas disponibles.
-// El chip de talla se muestra ATENUADO si esa talla está sin stock.
+// Card del grid — imagen, nombre, categoría + tallas en una línea,
+// precio. El chip de talla se muestra ATENUADO si esa talla está
+// sin stock.
 
-export default function ProductCard({ product }: { product: Product }) {
+interface ProductCardProps {
+  product: Product;
+  /** Nombre de la categoría — la resolvés en el padre a partir de
+   *  product.categoryId (evita un fetch por card). Opcional; si falta
+   *  no se renderiza el label. */
+  categoryName?: string;
+}
+
+export default function ProductCard({ product, categoryName }: ProductCardProps) {
   const cover = product.images?.[0];
   const stock = totalStock(product);
   const soldOut = stock === 0;
@@ -48,25 +57,31 @@ export default function ProductCard({ product }: { product: Product }) {
           {product.name}
         </p>
 
-        {/* Size chips — solo las que tiene disponibles */}
-        <div className="flex flex-wrap gap-1 my-2">
-          {SIZES.filter((s) => (product.sizes || []).includes(s)).map((s) => {
-            const stockOfSize = product.stockBySize?.[s] ?? 0;
-            const outOfSize = stockOfSize <= 0;
-            return (
-              <span
-                key={s}
-                className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border ${
-                  outOfSize
-                    ? 'border-neutral-800 text-neutral-700 line-through'
-                    : 'border-neutral-700 text-neutral-300'
-                }`}
-                title={outOfSize ? `${s} out of stock` : `${s} in stock`}
-              >
-                {s}
-              </span>
-            );
-          })}
+        {/* Categoría (izquierda) + tallas disponibles (derecha) en 1 línea.
+            Category trunca si es larga; sizes flex-shrink-0 no se aplasta. */}
+        <div className="flex items-center justify-between gap-2 my-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 truncate">
+            {categoryName || '—'}
+          </span>
+          <div className="flex gap-0.5 flex-shrink-0">
+            {SIZES.filter((s) => (product.sizes || []).includes(s)).map((s) => {
+              const stockOfSize = product.stockBySize?.[s] ?? 0;
+              const outOfSize = stockOfSize <= 0;
+              return (
+                <span
+                  key={s}
+                  className={`text-[9px] font-bold uppercase px-1 py-px rounded border ${
+                    outOfSize
+                      ? 'border-neutral-800 text-neutral-700 line-through'
+                      : 'border-neutral-700 text-neutral-300'
+                  }`}
+                  title={outOfSize ? `${s} out of stock` : `${s} in stock`}
+                >
+                  {s}
+                </span>
+              );
+            })}
+          </div>
         </div>
 
         <p className="text-lg font-black text-white">

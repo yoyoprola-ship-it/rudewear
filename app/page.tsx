@@ -7,7 +7,7 @@ import { db } from './lib/firebase';
 import Header from './components/Header';
 import ProductCard from './components/ProductCard';
 import DeliveryModal from './components/DeliveryModal';
-import type { Product } from './types';
+import type { Category, Product } from './types';
 
 export default function Home() {
   return (
@@ -21,21 +21,34 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const activeCat = searchParams?.get('cat') || 'all';
   const [products, setProducts] = useState<Product[]>([]);
+  const [categoryNames, setCategoryNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const snap = await getDocs(
-          query(
-            collection(db, 'rudewear_products'),
-            where('active', '==', true)
-          )
-        );
+        // Cargamos productos + categorías en paralelo. El Map de
+        // categorías se pasa a cada ProductCard para mostrar el nombre
+        // sin un fetch por card.
+        const [prodSnap, catSnap] = await Promise.all([
+          getDocs(
+            query(
+              collection(db, 'rudewear_products'),
+              where('active', '==', true)
+            )
+          ),
+          getDocs(collection(db, 'rudewear_categories')),
+        ]);
         setProducts(
-          snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Product)
+          prodSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Product)
         );
+        const catMap = new Map<string, string>();
+        catSnap.docs.forEach((d) => {
+          const data = d.data() as Category;
+          if (typeof data.name === 'string') catMap.set(d.id, data.name);
+        });
+        setCategoryNames(catMap);
       } catch (err) {
         console.error('[home] load products failed:', err);
       } finally {
@@ -68,7 +81,11 @@ function HomeContent() {
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {filtered.map((p) => (
-                <ProductCard key={p.id} product={p} />
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  categoryName={categoryNames.get(p.categoryId)}
+                />
               ))}
             </div>
 

@@ -247,7 +247,8 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
-        {/* Related products */}
+        {/* Related products — todos son de la misma categoría, así que
+            reusamos el nombre ya cargado arriba en `category`. */}
         {related.length > 0 && (
           <section className="border-t border-neutral-900 pt-10">
             <h2 className="text-xl font-black uppercase tracking-tight mb-6">
@@ -255,7 +256,11 @@ export default function ProductDetailPage() {
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {related.map((r) => (
-                <ProductCard key={r.id} product={r} />
+                <ProductCard
+                  key={r.id}
+                  product={r}
+                  categoryName={category?.name}
+                />
               ))}
             </div>
           </section>
