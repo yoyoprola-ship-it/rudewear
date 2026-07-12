@@ -4,15 +4,18 @@ import { adminAuth, adminDb } from '@/app/lib/firebaseAdmin';
 
 // POST /api/admin/broadcast-sms
 // Header: Authorization: Bearer <Firebase ID token>
-// Body: { deliveryIds: string[], message: string }
+// Body: {
+//   deliveryIds?: string[],   // dispara SMS a customerPhone de cada delivery
+//   phones?: string[],         // O directamente phones (usado por /admin/messages reply)
+//   message: string,
+// }
 //
-// Manda un SMS via Twilio a los customerPhone de todas las deliveries
-// indicadas. Dedupe por phone — si dos deliveries del mismo phone
-// están seleccionadas, se manda UN sólo SMS. Devuelve el listado
-// de éxitos y fallos.
+// Manda un SMS via Twilio. Acepta o `deliveryIds` (para el broadcast del
+// map panel) o `phones` (para replies desde el inbox). Dedupe por phone
+// — un customer con varias reservas seleccionadas recibe UN sólo SMS.
 //
-// Guarda un audit log en `rudewear_broadcasts` para trackear qué
-// mandó el admin y a quiénes — útil para eventuales disputas TCPA.
+// Guarda un audit log en `rudewear_broadcasts` para trackear qué mandó
+// el admin y a quiénes.
 
 const MAX_RECIPIENTS = 100;
 const MIN_MESSAGE_LEN = 3;
@@ -20,6 +23,7 @@ const MAX_MESSAGE_LEN = 1600;
 
 interface Body {
   deliveryIds?: unknown;
+  phones?: unknown;
   message?: unknown;
 }
 
@@ -70,9 +74,18 @@ export async function POST(request: NextRequest) {
         .filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length < 100)
         .slice(0, MAX_RECIPIENTS)
     : [];
+  // Phones directos — usado por el reply desde el inbox. Se
+  // normalizan a 10 dígitos y se valida length exacto.
+  const phonesDirect = Array.isArray(body.phones)
+    ? (body.phones as unknown[])
+        .filter((x): x is string => typeof x === 'string')
+        .map((p) => p.replace(/\D/g, '').slice(-10))
+        .filter((p) => p.length === 10)
+        .slice(0, MAX_RECIPIENTS)
+    : [];
   const message = typeof body.message === 'string' ? body.message.trim() : '';
 
-  if (deliveryIds.length === 0) {
+  if (deliveryIds.length === 0 && phonesDirect.length === 0) {
     return NextResponse.json(
       { error: 'Pick at least 1 recipient' },
       { status: 400 }
@@ -132,6 +145,12 @@ export async function POST(request: NextRequest) {
     const existing = phoneToIds.get(r.phone) || [];
     existing.push(r.id);
     phoneToIds.set(r.phone, existing);
+  }
+
+  // Añadir los phones directos (sin ids asociados — se listan con []
+  // en deliveryIds). Dedupe automático porque phoneToIds es Map.
+  for (const p of phonesDirect) {
+    if (!phoneToIds.has(p)) phoneToIds.set(p, []);
   }
 
   // ── Send SMS per unique phone ─────────────────────────
