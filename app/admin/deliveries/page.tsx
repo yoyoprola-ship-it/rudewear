@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   collection,
   doc,
@@ -118,13 +119,21 @@ export default function AdminDeliveriesPage() {
             drivers charge on arrival.
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="px-4 py-2 border border-neutral-700 hover:border-neutral-500 rounded text-sm font-bold uppercase tracking-wide disabled:opacity-50"
-        >
-          {loading ? 'Loading…' : '↻ Refresh'}
-        </button>
+        <div className="flex gap-2">
+          <Link
+            href="/admin/deliveries/map"
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-bold uppercase tracking-wide"
+          >
+            🗺 Map + broadcast
+          </Link>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="px-4 py-2 border border-neutral-700 hover:border-neutral-500 rounded text-sm font-bold uppercase tracking-wide disabled:opacity-50"
+          >
+            {loading ? 'Loading…' : '↻ Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Filter tabs */}

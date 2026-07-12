@@ -99,6 +99,11 @@ export interface Delivery {
   // el driver cobra en efectivo cuando llega. Free = 0.
   distanceMiles: number;           // driving one-way desde DELIVERY_ORIGIN
   deliveryFee: number;             // 0 si <5mi; miles×$1.50 si ≥5mi
+  // Coords de la address — geocoded lazy en /admin/deliveries/map y
+  // cacheado acá para no re-geocodear en cada load. Opcional porque
+  // docs viejos o los que fallaron el geocode no lo tienen.
+  lat?: number;
+  lng?: number;
   // Cliente marcó el checkbox aceptando pagar el fee en cash al llegar.
   // Solo se pide/valida si deliveryFee > 0. Guardamos siempre para
   // auditoría (una eventual disputa "yo no acepté esto").
