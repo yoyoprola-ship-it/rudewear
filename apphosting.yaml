@@ -93,3 +93,28 @@ env:
     secret: INTERNAL_API_SECRET
     availability:
       - RUNTIME
+
+  # ─── Twilio (compartidos — misma cuenta que Lafayette) ─────
+  # Se usan para notificar al ADMIN_PHONE cuando llega una reserva
+  # nueva de delivery. Endpoint: app/api/create-delivery/route.ts.
+  # ADMIN_PHONE está exempt del TCPA consent check en Lafayette,
+  # y acá lo mandamos fire-and-forget directo a Twilio.
+  - variable: TWILIO_ACCOUNT_SID
+    secret: TWILIO_ACCOUNT_SID
+    availability:
+      - RUNTIME
+
+  - variable: TWILIO_AUTH_TOKEN
+    secret: TWILIO_AUTH_TOKEN
+    availability:
+      - RUNTIME
+
+  - variable: TWILIO_PHONE_NUMBER
+    secret: TWILIO_PHONE_NUMBER
+    availability:
+      - RUNTIME
+
+  - variable: ADMIN_PHONE
+    secret: ADMIN_PHONE
+    availability:
+      - RUNTIME

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '@/app/lib/firebaseAdmin';
+import { notifyAdminOfNewDelivery } from '@/app/lib/notifyAdmin';
 
 // POST /api/create-delivery
 // Body: { address, scheduledAt, scheduledDay, notes, customerName }
@@ -109,6 +110,20 @@ export async function POST(request: NextRequest) {
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    // Fire-and-forget notification al ADMIN_PHONE. Si Twilio falla
+    // el admin igual ve la reserva en /admin/deliveries — no
+    // bloqueamos la respuesta al cliente por esto.
+    notifyAdminOfNewDelivery({
+      customerName,
+      customerPhone: phoneFromToken,
+      address,
+      scheduledAt,
+      scheduledDay,
+    }).catch((err) => {
+      console.error('[create-delivery] notify (unhandled):', err);
+    });
+
     return NextResponse.json({ ok: true, id: ref.id });
   } catch (err) {
     console.error('[create-delivery] write failed:', err);
