@@ -12,16 +12,19 @@ import {
 } from '@/app/lib/customer';
 import { formatSlot, getAvailableSlots, type TimeSlot } from '@/app/lib/timeSlots';
 import AddressInput from './AddressInput';
+import { auth } from '@/app/lib/firebase';
 import type { User } from 'firebase/auth';
 
 // Modal multi-step para reservar el servicio de delivery.
+// NO cobra plata — solo captura address, hora, notas y phone del
+// cliente para que el driver lo llame al llegar.
+//
 // Steps:
 //   1. phone    — cliente pone su phone
-//   2. code     — verifica SMS code de Firebase
+//   2. code     — SMS code (Firebase Phone Auth)
 //   3. alias    — solo si es user nuevo, pide alias/name
-//   4. details  — address + fecha/hora + notas + preview del fee
-//   5. pay      — Stripe payment (delegado a página aparte en Fase 3c)
-//   6. success  — reserva confirmada
+//   4. details  — address + hora + notas + submit
+//   5. success  — reserva confirmada
 
 interface DeliveryModalProps {
   open: boolean;
@@ -29,15 +32,6 @@ interface DeliveryModalProps {
 }
 
 type Step = 'phone' | 'code' | 'alias' | 'details' | 'success';
-
-interface FeeBreakdown {
-  miles: number;
-  minutes: number;
-  distanceFee: number;
-  timeFee: number;
-  baseFee: number;
-  total: number;
-}
 
 export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
   const [step, setStep] = useState<Step>('phone');
@@ -53,26 +47,20 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
 
   // Details form
   const [address, setAddress] = useState('');
-  const [addressCoords, setAddressCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [addressZip, setAddressZip] = useState<string | null>(null);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>('');
   const [notes, setNotes] = useState('');
-  const [feeBreakdown, setFeeBreakdown] = useState<FeeBreakdown | null>(null);
-  const [feeLoading, setFeeLoading] = useState(false);
 
   const recaptchaRef = useRef<HTMLDivElement>(null);
 
-  // Generar slots al abrir el modal — cada vez que se abre re-checkea la hora.
+  // Regenerar slots al abrir (para no mostrar horas pasadas si el
+  // modal quedó abierto mucho rato).
   useEffect(() => {
-    if (open) {
-      setSlots(getAvailableSlots());
-    }
+    if (open) setSlots(getAvailableSlots());
   }, [open]);
 
-  // Auth listener — si el user ya está logueado (venia de otra visita
-  // o del /admin), saltamos directo a details + pre-cargamos address
-  // si tiene una guardada.
+  // Si el user ya está logueado, saltamos al step correcto y
+  // pre-cargamos address si tiene guardada.
   useEffect(() => {
     if (!open) return;
     const unsub = onAuthChange(async (u) => {
@@ -82,16 +70,7 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
         if (profile?.name) {
           setExistingName(profile.name);
           setAlias(profile.name);
-          // Pre-fill saved address (si la tenía). El PlaceAutocomplete
-          // no acepta value programático — lo guardamos en state y el
-          // fee se recalcula igual porque el useEffect abajo dispara.
-          if (profile.address) {
-            setAddress(profile.address);
-            // Sin coords guardadas necesitamos "aproximar" — mandamos
-            // coords null pero el fee se calcula server-side desde el
-            // string address vía Distance Matrix, así que funciona.
-            setAddressCoords({ lat: 0, lng: 0 });
-          }
+          if (profile.address) setAddress(profile.address);
           setStep((s) => (s === 'phone' || s === 'code') ? 'details' : s);
         }
       } else {
@@ -100,41 +79,6 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
     });
     return () => unsub();
   }, [open]);
-
-  // Cuando address se finaliza + hay coords → calcular fee
-  useEffect(() => {
-    if (!address || !addressCoords) {
-      setFeeBreakdown(null);
-      return;
-    }
-    let cancelled = false;
-    setFeeLoading(true);
-    setError('');
-    (async () => {
-      try {
-        const res = await fetch('/api/calculate-fee', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address }),
-        });
-        const data = await res.json();
-        if (cancelled) return;
-        if (!res.ok) {
-          setError(data.error || 'Could not calculate fee.');
-          setFeeBreakdown(null);
-        } else {
-          setFeeBreakdown(data.breakdown);
-        }
-      } catch (err: unknown) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Fee calc failed');
-        setFeeBreakdown(null);
-      } finally {
-        if (!cancelled) setFeeLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [address, addressCoords]);
 
   const formatPhoneDisplay = (v: string): string => {
     const d = v.replace(/\D/g, '').slice(0, 10);
@@ -180,11 +124,11 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
     try {
       const u = await confirmSmsCode(code);
       setUser(u);
-      // Check profile
       const profile = await getCustomerProfile(u.uid);
       if (profile?.name) {
         setExistingName(profile.name);
         setAlias(profile.name);
+        if (profile.address) setAddress(profile.address);
         setStep('details');
       } else {
         setStep('alias');
@@ -225,24 +169,23 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
     }
   };
 
-  const handleContinueToPay = async () => {
-    if (!user || !feeBreakdown || !selectedSlot || !address) {
+  const handleSubmitDelivery = async () => {
+    if (!user || !selectedSlot || !address) {
       setError('Complete all fields first.');
       return;
     }
-    // Guardá la address (y refrescá name/phone si es un signup fresh)
-    // en el user doc — persiste para próxima visita. Best-effort:
-    // si falla, no bloqueamos el continuar.
+    setError('');
+    setLoading(true);
+
+    // Guardá también la address en el perfil para la próxima visita.
     try {
       if (existingName) {
-        // User ya tenía perfil — solo actualizamos address.
         await saveCustomerProfile(user.uid, {
           name: existingName,
-          phone: '',   // merge:true + saveCustomerProfile skipea phone si es ''
+          phone: '',
           address,
         });
       } else {
-        // Signup fresh en este flow — persistimos todo.
         await saveCustomerProfile(user.uid, {
           name: alias,
           phone: phone.replace(/\D/g, ''),
@@ -250,10 +193,50 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
         });
       }
     } catch (err) {
-      console.warn('[delivery] save address failed (non-fatal):', err);
+      console.warn('[delivery] save profile failed (non-fatal):', err);
     }
-    // En Fase 3c reemplazamos esto por Stripe payment real.
-    setStep('success');
+
+    // POST /api/create-delivery
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error('Session expired. Sign in again.');
+      const slotObj = slots.find((s) => s.iso === selectedSlot);
+      const scheduledDay = slotObj?.day || 'today';
+      const res = await fetch('/api/create-delivery', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          address,
+          scheduledAt: selectedSlot,
+          scheduledDay,
+          notes,
+          customerName: existingName || alias,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Save failed (status ${res.status})`);
+      }
+      setStep('success');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Submit failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetAndClose = () => {
+    // Al cerrar después del success, limpiamos el form por si el
+    // customer quiere hacer OTRA reserva en la misma sesión.
+    setStep(existingName ? 'details' : 'phone');
+    setError('');
+    setCode('');
+    setNotes('');
+    setSelectedSlot('');
+    onClose();
   };
 
   if (!open) return null;
@@ -273,7 +256,7 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
               {step === 'phone' && 'Step 1 of 4'}
               {step === 'code' && 'Step 2 of 4'}
               {step === 'alias' && 'Step 3 of 4'}
-              {step === 'details' && (existingName ? 'Step 3 of 3' : 'Step 4 of 4')}
+              {step === 'details' && (existingName ? 'Details' : 'Step 4 of 4')}
               {step === 'success' && 'Done'}
             </p>
             <h2 className="text-lg font-black uppercase tracking-tight text-white">
@@ -290,11 +273,11 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
         </div>
 
         <div className="p-6">
-          {/* STEP 1 — PHONE */}
           {step === 'phone' && (
             <form onSubmit={handleSendCode} className="flex flex-col gap-4">
               <p className="text-sm text-neutral-400 mb-2">
-                We&apos;ll text you a code to verify your number.
+                We&apos;ll text you a code to verify your number. We use it to
+                call you when the driver arrives at your door.
               </p>
               <label className="block">
                 <span className="block text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1">
@@ -322,11 +305,11 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
             </form>
           )}
 
-          {/* STEP 2 — CODE */}
           {step === 'code' && (
             <form onSubmit={handleVerifyCode} className="flex flex-col gap-4">
               <p className="text-sm text-neutral-400 mb-2">
-                Enter the 6-digit code sent to <strong className="text-white">{formatPhoneDisplay(phone)}</strong>.
+                Enter the 6-digit code sent to{' '}
+                <strong className="text-white">{formatPhoneDisplay(phone)}</strong>.
               </p>
               <input
                 type="text"
@@ -360,7 +343,6 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
             </form>
           )}
 
-          {/* STEP 3 — ALIAS (solo si es nuevo) */}
           {step === 'alias' && (
             <form onSubmit={handleSaveAlias} className="flex flex-col gap-4">
               <p className="text-sm text-neutral-400 mb-2">
@@ -385,16 +367,15 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
             </form>
           )}
 
-          {/* STEP 4 — DETAILS */}
           {step === 'details' && (
             <div className="flex flex-col gap-5">
               {existingName && (
                 <p className="text-xs text-neutral-500">
-                  Signed in as <strong className="text-neutral-300">{existingName}</strong>
+                  Signed in as{' '}
+                  <strong className="text-neutral-300">{existingName}</strong>
                 </p>
               )}
 
-              {/* Address */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1">
                   Delivery address
@@ -402,13 +383,10 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
                 <AddressInput
                   value={address}
                   onChange={setAddress}
-                  onCoordsChange={setAddressCoords}
-                  onZipChange={setAddressZip}
                   placeholder="Start typing your address…"
                 />
               </div>
 
-              {/* Time slot */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1">
                   When
@@ -431,11 +409,10 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
                   ))}
                 </select>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Mobile store hours: 9 AM – 7 PM
+                  Mobile store hours: 9 AM – 7 PM · 2-hour windows.
                 </p>
               </div>
 
-              {/* Notes */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1">
                   Notes for the driver (optional)
@@ -444,56 +421,33 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
-                  maxLength={300}
+                  maxLength={500}
                   placeholder="Gate code, apartment #, styles you're interested in…"
                   className={inputCls}
                 />
               </div>
 
-              {/* Fee preview */}
-              {feeLoading && (
-                <div className="p-3 border border-neutral-800 rounded bg-neutral-900 text-center text-neutral-500 text-sm">
-                  Calculating fee…
-                </div>
-              )}
-              {feeBreakdown && !feeLoading && (
-                <div className="p-4 border border-red-800/40 bg-red-950/20 rounded space-y-1 text-sm">
-                  <div className="flex justify-between text-neutral-400">
-                    <span>Distance ({feeBreakdown.miles} mi × $1)</span>
-                    <span>${feeBreakdown.distanceFee.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-neutral-400">
-                    <span>Time ({feeBreakdown.minutes} min × $20/hr)</span>
-                    <span>${feeBreakdown.timeFee.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-neutral-400">
-                    <span>Base</span>
-                    <span>${feeBreakdown.baseFee.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-white font-black text-lg pt-2 border-t border-neutral-800 mt-2">
-                    <span>Delivery fee</span>
-                    <span>${feeBreakdown.total.toFixed(2)}</span>
-                  </div>
-                  <p className="text-xs text-neutral-500 pt-1">
-                    Products are paid separately at your door.
-                  </p>
-                </div>
-              )}
+              <div className="border border-neutral-800 bg-neutral-900/50 rounded p-4 text-sm">
+                <p className="font-bold text-white mb-1">Free service</p>
+                <p className="text-neutral-400 text-xs">
+                  No charge for the visit. Pay for the clothes in person when
+                  the driver arrives.
+                </p>
+              </div>
 
               {error && <p className="text-sm text-red-500">{error}</p>}
 
               <button
                 type="button"
-                onClick={handleContinueToPay}
-                disabled={!feeBreakdown || !selectedSlot || feeLoading}
+                onClick={handleSubmitDelivery}
+                disabled={loading || !address || !selectedSlot}
                 className={btnPrimaryCls}
               >
-                Continue to payment
+                {loading ? 'Submitting…' : 'Confirm request'}
               </button>
             </div>
           )}
 
-          {/* STEP 5 — SUCCESS (placeholder until Fase 3c) */}
           {step === 'success' && (
             <div className="text-center py-4">
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-red-600 flex items-center justify-center text-white text-3xl">
@@ -501,23 +455,24 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
               </div>
               <p className="text-lg font-black uppercase mb-2">Reservation received</p>
               <p className="text-sm text-neutral-400 mb-6">
-                Payment integration coming in the next phase. This step is a placeholder.
+                We&apos;ll call you at{' '}
+                <strong className="text-white">
+                  {formatPhoneDisplay(phone || existingName ? phone : phone)}
+                </strong>{' '}
+                when the driver is near your door.
               </p>
-              <button onClick={onClose} className={btnPrimaryCls}>
+              <button onClick={resetAndClose} className={btnPrimaryCls}>
                 Close
               </button>
             </div>
           )}
         </div>
 
-        {/* reCAPTCHA invisible */}
         <div id="rudewear-delivery-recaptcha" ref={recaptchaRef} />
       </div>
     </div>
   );
 }
-
-// ─── Styles ──────────────────────────────────────────────────
 
 const inputCls =
   'w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded text-white placeholder:text-neutral-600 focus:outline-none focus:border-red-600 transition-colors';

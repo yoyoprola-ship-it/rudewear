@@ -70,18 +70,19 @@ export function isLowStock(p: Product): boolean {
 }
 
 // ─── Delivery service ────────────────────────────────────────
-// Rudewear NO vende productos online. El cliente reserva una
-// VISITA a domicilio y solo paga por ese servicio (miles + time).
-// Los productos se pagan en persona al momento de la visita.
-// La tienda móvil abre 9 AM a 7 PM; el cliente elige hora entre
-// hoy y mañana en slots horarios de 9-18 (18 = última entrega,
-// alcanza para completar antes del cierre a las 19).
+// La tienda móvil visita el domicilio del cliente. Rudewear NO
+// cobra por el traslado — el cliente solo paga las prendas en
+// persona cuando el driver llega. La reserva captura: address,
+// hora preferida, notas y el phone del cliente para llamar al
+// llegar.
+// Horario: 9 AM a 7 PM. El cliente elige slot de 2 horas entre
+// hoy y mañana.
 
 export type DeliveryStatus =
-  | 'requested'        // creado, hold en Stripe autorizado
+  | 'requested'        // cliente hizo la reserva
   | 'confirmed'        // admin confirmó, va camino
-  | 'delivered'        // completó la visita, hold capturado
-  | 'cancelled';       // cancelada, hold liberado
+  | 'delivered'        // completó la visita
+  | 'cancelled';
 
 export interface Delivery {
   id: string;
@@ -89,19 +90,10 @@ export interface Delivery {
   customerName: string;            // alias del user doc
   customerPhone: string;           // 10 dígitos US (verificado por SMS)
   address: string;                 // string completa (Google formatted)
-  addressLat: number;
-  addressLng: number;
-  addressZip?: string;
-  distanceMiles: number;           // desde DELIVERY_ORIGIN
-  distanceMinutes: number;         // driving time one-way
   notes: string;                   // instrucciones libres del cliente
-  // Fecha/hora seleccionada por el cliente. ISO string en LA tz.
-  scheduledAt: string;             // e.g., '2026-05-28T15:00:00-05:00'
-  scheduledDay: 'today' | 'tomorrow'; // etiqueta legible
-  // Money
-  deliveryFee: number;             // = miles*1 + (minutes/60)*20 + 3.30
-  paymentIntentId: string;
-  paymentStatus: 'authorized' | 'captured' | 'canceled' | 'failed';
+  // Fecha/hora seleccionada por el cliente. ISO local (LA tz).
+  scheduledAt: string;             // e.g., '2026-05-28T15:00:00'
+  scheduledDay: 'today' | 'tomorrow';
   status: DeliveryStatus;
   createdAt?: FirestoreTimestampish;
   updatedAt?: FirestoreTimestampish;
