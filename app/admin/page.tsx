@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase';
 import {
+  type Delivery,
   type Product,
   totalStock,
   profitPerUnit,
@@ -15,18 +16,30 @@ import {
 
 export default function AdminDashboard() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [pendingDeliveries, setPendingDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const snap = await getDocs(collection(db, 'rudewear_products'));
-        const list = snap.docs.map(
-          (d) => ({ id: d.id, ...d.data() }) as Product
+        const [prodSnap, delivSnap] = await Promise.all([
+          getDocs(collection(db, 'rudewear_products')),
+          // Solo las que necesitan atención — requested o confirmed.
+          getDocs(
+            query(
+              collection(db, 'rudewear_deliveries'),
+              where('status', 'in', ['requested', 'confirmed'])
+            )
+          ),
+        ]);
+        setProducts(
+          prodSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Product)
         );
-        setProducts(list);
+        setPendingDeliveries(
+          delivSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Delivery)
+        );
       } catch (err) {
-        console.error('[admin] load products failed:', err);
+        console.error('[admin] load dashboard failed:', err);
       } finally {
         setLoading(false);
       }
@@ -47,6 +60,13 @@ export default function AdminDashboard() {
     (sum, p) => sum + totalStock(p) * profitPerUnit(p),
     0
   );
+
+  const requestedCount = pendingDeliveries.filter(
+    (d) => d.status === 'requested'
+  ).length;
+  const confirmedCount = pendingDeliveries.filter(
+    (d) => d.status === 'confirmed'
+  ).length;
 
   if (loading) {
     return <p className="text-neutral-500">Loading…</p>;
@@ -91,6 +111,29 @@ export default function AdminDashboard() {
         />
       </div>
 
+      {/* Deliveries in queue — banner destacado si hay requested */}
+      {requestedCount > 0 && (
+        <div className="border border-red-800/60 bg-red-950/30 rounded p-4 mb-6 flex items-center justify-between gap-4">
+          <div>
+            <p className="font-bold text-red-300 mb-1">
+              🚚 {requestedCount} delivery request
+              {requestedCount === 1 ? '' : 's'} waiting
+            </p>
+            <p className="text-sm text-neutral-400">
+              {confirmedCount > 0
+                ? `Also ${confirmedCount} confirmed and scheduled to go out.`
+                : 'Confirm and dispatch when ready.'}
+            </p>
+          </div>
+          <Link
+            href="/admin/deliveries"
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-bold uppercase tracking-wide whitespace-nowrap"
+          >
+            Review →
+          </Link>
+        </div>
+      )}
+
       {/* Quick actions */}
       <div className="flex flex-wrap gap-3 mb-10">
         <Link
@@ -110,6 +153,17 @@ export default function AdminDashboard() {
           className="px-4 py-2 border border-neutral-700 hover:border-neutral-500 rounded text-sm font-bold uppercase tracking-wide"
         >
           Manage categories
+        </Link>
+        <Link
+          href="/admin/deliveries"
+          className="px-4 py-2 border border-neutral-700 hover:border-neutral-500 rounded text-sm font-bold uppercase tracking-wide"
+        >
+          Deliveries
+          {requestedCount > 0 && (
+            <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-600 text-white text-[10px] font-black rounded-full">
+              {requestedCount}
+            </span>
+          )}
         </Link>
       </div>
 
