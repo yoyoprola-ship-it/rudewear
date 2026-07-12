@@ -28,7 +28,7 @@ export const MAX_DELIVERY_RADIUS_MILES = 40;
 export const FREE_DELIVERY_RADIUS_MILES = 5;
 
 /** Precio por milla driving cuando NO cae en el free tier. */
-export const DELIVERY_PER_MILE_RATE = 1.5;
+export const DELIVERY_PER_MILE_RATE = 0.89;
 
 /** Calcula el fee del delivery en dólares.
  *  @param miles distancia driving one-way (Google Distance Matrix)
