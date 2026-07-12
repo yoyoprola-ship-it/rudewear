@@ -1,9 +1,13 @@
 // Rudewear delivery pricing — source of truth.
-// Fórmula: (miles × $1) + (hours × $20) + $3.30 fixed.
 //
-// El $3.30 es un base que absorbe el fee de Stripe (~2.9% + $0.30)
-// para pagos chicos + una micro contribución de operación. Ajustable
-// desde acá — todo el resto del código consume estos helpers.
+// Fórmula actual:
+//   miles < FREE_RADIUS   → $0 (free)
+//   miles ≥ FREE_RADIUS   → miles × PER_MILE_RATE
+//
+// El cliente NUNCA paga online — el driver cobra en efectivo cuando
+// llega. Este helper sirve para (a) mostrar preview en el modal,
+// (b) recomputar server-side al persistir (nunca confiar en el
+// número del cliente).
 
 /** Dirección desde donde sale el driver. Reusa el mismo origin que
  *  Lafayette Market (var pública, ya está en Secret Manager).
@@ -20,44 +24,40 @@ export const DELIVERY_ORIGIN_COORDS = { lat: 30.2241, lng: -92.0198 };
  *  reserva. Mismo valor que Lafayette Market. */
 export const MAX_DELIVERY_RADIUS_MILES = 40;
 
-/** Constantes de la fórmula. */
-export const DELIVERY_PER_MILE = 1;         // $ por milla driving
-export const DELIVERY_PER_HOUR = 20;        // $ por hora driving
-export const DELIVERY_BASE_FEE = 3.30;      // $ fijo (Stripe fee + micro base)
+/** Umbral bajo el cual la visita es gratis. */
+export const FREE_DELIVERY_RADIUS_MILES = 5;
+
+/** Precio por milla driving cuando NO cae en el free tier. */
+export const DELIVERY_PER_MILE_RATE = 1.5;
 
 /** Calcula el fee del delivery en dólares.
  *  @param miles distancia driving one-way (Google Distance Matrix)
- *  @param minutes driving time one-way en minutos
  */
-export function calculateDeliveryFee(miles: number, minutes: number): number {
+export function calculateDeliveryFee(miles: number): number {
   if (!Number.isFinite(miles) || miles < 0) return 0;
-  if (!Number.isFinite(minutes) || minutes < 0) return 0;
-  const hours = minutes / 60;
-  const total =
-    miles * DELIVERY_PER_MILE +
-    hours * DELIVERY_PER_HOUR +
-    DELIVERY_BASE_FEE;
+  if (miles < FREE_DELIVERY_RADIUS_MILES) return 0;
+  const total = miles * DELIVERY_PER_MILE_RATE;
   return Math.round(total * 100) / 100;
 }
 
 /** Breakdown que la UI muestra al cliente al ver el fee.
- *  Cada componente redondeado a 2 decimales para display consistente. */
+ *  `free = true` cuando la address cae bajo el free tier. */
 export interface DeliveryFeeBreakdown {
   miles: number;
-  minutes: number;
-  distanceFee: number;   // miles × 1
-  timeFee: number;       // hours × 20
-  baseFee: number;       // 3.30
-  total: number;         // suma
+  free: boolean;
+  perMileRate: number;      // 1.5
+  freeRadius: number;       // 5
+  total: number;            // 0 o miles × 1.5
 }
 
-export function deliveryFeeBreakdown(
-  miles: number,
-  minutes: number
-): DeliveryFeeBreakdown {
-  const distanceFee = Math.round(miles * DELIVERY_PER_MILE * 100) / 100;
-  const timeFee = Math.round((minutes / 60) * DELIVERY_PER_HOUR * 100) / 100;
-  const baseFee = DELIVERY_BASE_FEE;
-  const total = Math.round((distanceFee + timeFee + baseFee) * 100) / 100;
-  return { miles, minutes, distanceFee, timeFee, baseFee, total };
+export function deliveryFeeBreakdown(miles: number): DeliveryFeeBreakdown {
+  const free = miles < FREE_DELIVERY_RADIUS_MILES;
+  const total = calculateDeliveryFee(miles);
+  return {
+    miles,
+    free,
+    perMileRate: DELIVERY_PER_MILE_RATE,
+    freeRadius: FREE_DELIVERY_RADIUS_MILES,
+    total,
+  };
 }

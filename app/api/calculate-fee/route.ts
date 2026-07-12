@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDrivingDistanceFromOrigin } from '@/app/lib/drivingDistance';
 import {
-  calculateDeliveryFee,
   deliveryFeeBreakdown,
   MAX_DELIVERY_RADIUS_MILES,
 } from '@/app/lib/pricing';
 
 // POST /api/calculate-fee
 // Body: { address: string }
-// Returns: { miles, minutes, breakdown, total } o { error }
+// Returns: { miles, breakdown, total, free } o { error }
 //
 // Se usa desde el DeliveryModal al finalizar la selección de address
 // vía Google Places autocomplete. Server-side para no exponer el
 // key de Distance Matrix.
+//
+// El fee que devuelve este endpoint es SOLO PREVIEW. La validación
+// autoritativa vive en /api/create-delivery, que recalcula al
+// persistir para que el cliente no pueda mandar un fee=0 falseado.
 
 export async function POST(request: NextRequest) {
   let address: string;
@@ -48,11 +51,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const breakdown = deliveryFeeBreakdown(dist.miles, dist.minutes);
+  const breakdown = deliveryFeeBreakdown(dist.miles);
   return NextResponse.json({
     miles: dist.miles,
-    minutes: dist.minutes,
     breakdown,
-    total: calculateDeliveryFee(dist.miles, dist.minutes),
+    total: breakdown.total,
+    free: breakdown.free,
   });
 }

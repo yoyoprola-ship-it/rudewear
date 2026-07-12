@@ -2,18 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '@/app/lib/firebaseAdmin';
 import { notifyAdminOfNewDelivery } from '@/app/lib/notifyAdmin';
+import { getDrivingDistanceFromOrigin } from '@/app/lib/drivingDistance';
+import {
+  calculateDeliveryFee,
+  MAX_DELIVERY_RADIUS_MILES,
+} from '@/app/lib/pricing';
 
 // POST /api/create-delivery
-// Body: { address, scheduledAt, scheduledDay, notes, customerName }
+// Body: {
+//   address, scheduledAt, scheduledDay, notes, customerName,
+//   agreedToPayOnArrival: boolean
+// }
 // Header: Authorization: Bearer <Firebase ID token>
 //
 // Guarda una reserva de visita a domicilio en Firestore. El endpoint
-// verifica el ID token, extrae uid + phone del token, y usa Admin SDK
-// para escribir bypasseando las rules admin-only.
+// verifica el ID token, extrae uid + phone del token, RECOMPUTA el
+// fee server-side (no confía en el cliente), y usa Admin SDK para
+// escribir bypasseando las rules admin-only.
 //
-// No cobra plata — el customer paga las prendas en persona cuando el
-// driver llega. El teléfono queda guardado en el doc para que el
-// driver llame al arribar.
+// Pagos: el driver cobra en cash al arribar. Si el fee > 0 el cliente
+// debió marcar el checkbox de acuerdo en el modal — validamos que la
+// flag venga en true, sino rechazamos.
 
 interface Body {
   address?: string;
@@ -21,6 +30,7 @@ interface Body {
   scheduledDay?: 'today' | 'tomorrow';
   notes?: string;
   customerName?: string;
+  agreedToPayOnArrival?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -38,8 +48,6 @@ export async function POST(request: NextRequest) {
   try {
     const decoded = await adminAuth.verifyIdToken(token, true);
     uid = decoded.uid;
-    // phone_number viene en formato E.164 (+1XXXXXXXXXX). Extraemos
-    // los últimos 10 dígitos.
     const rawPhone = (decoded.phone_number || '').replace(/\D/g, '');
     phoneFromToken = rawPhone.slice(-10);
     if (phoneFromToken.length !== 10) {
@@ -66,6 +74,7 @@ export async function POST(request: NextRequest) {
   const scheduledDay = body.scheduledDay;
   const notes = (body.notes || '').trim().slice(0, 500);
   const customerName = (body.customerName || '').trim().slice(0, 60);
+  const agreedRaw = body.agreedToPayOnArrival === true;
 
   if (address.length < 5 || address.length > 300) {
     return NextResponse.json(
@@ -95,6 +104,38 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Recomputar la distancia server-side. NO confiamos en el fee que
+  // manda el cliente — un browser modificado podría enviar $0 con
+  // agreedToPayOnArrival=false y saltar el pago.
+  const dist = await getDrivingDistanceFromOrigin(address);
+  if (!dist) {
+    return NextResponse.json(
+      { error: 'Could not verify address. Try a more specific one.' },
+      { status: 400 }
+    );
+  }
+  if (dist.miles > MAX_DELIVERY_RADIUS_MILES) {
+    return NextResponse.json(
+      {
+        error: `Address is ${dist.miles} mi away — outside our ${MAX_DELIVERY_RADIUS_MILES}-mile service radius.`,
+      },
+      { status: 400 }
+    );
+  }
+  const deliveryFee = calculateDeliveryFee(dist.miles);
+
+  // Si el fee > 0, el checkbox del cliente tiene que estar marcado.
+  // Si es free, ignoramos lo que mandó — no hay nada que aceptar.
+  if (deliveryFee > 0 && !agreedRaw) {
+    return NextResponse.json(
+      {
+        error:
+          'You must agree to pay the delivery fee in cash when the driver arrives.',
+      },
+      { status: 400 }
+    );
+  }
+
   // Persist
   try {
     const ref = adminDb.collection('rudewear_deliveries').doc();
@@ -107,24 +148,34 @@ export async function POST(request: NextRequest) {
       scheduledAt,
       scheduledDay,
       status: 'requested',
+      distanceMiles: dist.miles,
+      deliveryFee,
+      // Persistimos siempre — free reserva queda con true implícito
+      // (no había nada que aceptar, pero para consistencia).
+      agreedToPayOnArrival: deliveryFee > 0 ? agreedRaw : true,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // Fire-and-forget notification al ADMIN_PHONE. Si Twilio falla
-    // el admin igual ve la reserva en /admin/deliveries — no
-    // bloqueamos la respuesta al cliente por esto.
+    // Fire-and-forget SMS al admin.
     notifyAdminOfNewDelivery({
       customerName,
       customerPhone: phoneFromToken,
       address,
       scheduledAt,
       scheduledDay,
+      deliveryFee,
+      distanceMiles: dist.miles,
     }).catch((err) => {
       console.error('[create-delivery] notify (unhandled):', err);
     });
 
-    return NextResponse.json({ ok: true, id: ref.id });
+    return NextResponse.json({
+      ok: true,
+      id: ref.id,
+      deliveryFee,
+      distanceMiles: dist.miles,
+    });
   } catch (err) {
     console.error('[create-delivery] write failed:', err);
     return NextResponse.json({ error: 'Save failed' }, { status: 500 });

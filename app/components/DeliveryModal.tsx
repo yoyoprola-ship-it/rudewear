@@ -16,8 +16,9 @@ import { auth } from '@/app/lib/firebase';
 import type { User } from 'firebase/auth';
 
 // Modal multi-step para reservar el servicio de delivery.
-// NO cobra plata — solo captura address, hora, notas y phone del
-// cliente para que el driver lo llame al llegar.
+// Bajo 5 millas es gratis. Sobre 5 millas cobra millas × $1.50, que
+// el driver COLECTA EN CASH al llegar — no se cobra online. El
+// cliente debe checkear que acepta pagar al arribo.
 //
 // Steps:
 //   1. phone    — cliente pone su phone
@@ -32,6 +33,14 @@ interface DeliveryModalProps {
 }
 
 type Step = 'phone' | 'code' | 'alias' | 'details' | 'success';
+
+interface FeePreview {
+  miles: number;
+  total: number;
+  free: boolean;
+  freeRadius: number;
+  perMileRate: number;
+}
 
 export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
   const [step, setStep] = useState<Step>('phone');
@@ -50,6 +59,12 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>('');
   const [notes, setNotes] = useState('');
+  // Fee preview — recalculado cada vez que la address cambia.
+  // Autoritativo lo re-computa el server al persistir.
+  const [feeInfo, setFeeInfo] = useState<FeePreview | null>(null);
+  const [feeLoading, setFeeLoading] = useState(false);
+  const [feeError, setFeeError] = useState<string>('');
+  const [agreed, setAgreed] = useState(false);
 
   const recaptchaRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +94,59 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
     });
     return () => unsub();
   }, [open]);
+
+  // Recalcular fee cuando cambia la address (debounced 500ms).
+  // El endpoint /api/calculate-fee llama Google Distance Matrix
+  // server-side. Ignoramos races via un flag `cancelled`.
+  useEffect(() => {
+    if (step !== 'details') return;
+    const trimmed = address.trim();
+    if (trimmed.length < 5) {
+      setFeeInfo(null);
+      setFeeError('');
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setFeeLoading(true);
+      setFeeError('');
+      try {
+        const res = await fetch('/api/calculate-fee', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: trimmed }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setFeeInfo(null);
+          setFeeError(data.error || 'Could not check distance.');
+          return;
+        }
+        setFeeInfo({
+          miles: data.miles,
+          total: data.total,
+          free: data.free,
+          freeRadius: data.breakdown?.freeRadius ?? 5,
+          perMileRate: data.breakdown?.perMileRate ?? 1.5,
+        });
+        // Si la address cambia y ya no requiere fee, reseteamos el
+        // acuerdo — el checkbox tiene que ser explícito para el nuevo
+        // monto.
+        setAgreed(false);
+      } catch (err) {
+        if (cancelled) return;
+        setFeeInfo(null);
+        setFeeError(err instanceof Error ? err.message : 'Distance check failed');
+      } finally {
+        if (!cancelled) setFeeLoading(false);
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [address, step]);
 
   const formatPhoneDisplay = (v: string): string => {
     const d = v.replace(/\D/g, '').slice(0, 10);
@@ -174,6 +242,14 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
       setError('Complete all fields first.');
       return;
     }
+    if (!feeInfo) {
+      setError('Wait for the distance check to finish.');
+      return;
+    }
+    if (!feeInfo.free && !agreed) {
+      setError('Please check the box agreeing to pay the delivery fee on arrival.');
+      return;
+    }
     setError('');
     setLoading(true);
 
@@ -214,6 +290,7 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
           scheduledDay,
           notes,
           customerName: existingName || alias,
+          agreedToPayOnArrival: feeInfo.free ? true : agreed,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -236,6 +313,9 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
     setCode('');
     setNotes('');
     setSelectedSlot('');
+    setAgreed(false);
+    // NO limpio feeInfo — el useEffect lo va a re-computar apenas
+    // la address se re-renderea.
     onClose();
   };
 
@@ -427,20 +507,75 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
                 />
               </div>
 
-              <div className="border border-neutral-800 bg-neutral-900/50 rounded p-4 text-sm">
-                <p className="font-bold text-white mb-1">Free service</p>
-                <p className="text-neutral-400 text-xs">
-                  No charge for the visit. Pay for the clothes in person when
-                  the driver arrives.
-                </p>
-              </div>
+              {/* Fee preview — depende del resultado de /api/calculate-fee */}
+              {address.trim().length >= 5 && (
+                <div className="border border-neutral-800 bg-neutral-900/50 rounded p-4 text-sm">
+                  {feeLoading && (
+                    <p className="text-neutral-400 text-xs">
+                      Checking distance…
+                    </p>
+                  )}
+                  {!feeLoading && feeError && (
+                    <p className="text-red-500 text-xs">{feeError}</p>
+                  )}
+                  {!feeLoading && !feeError && feeInfo && feeInfo.free && (
+                    <>
+                      <p className="font-bold text-green-400 mb-1">
+                        Free delivery
+                      </p>
+                      <p className="text-neutral-400 text-xs">
+                        {feeInfo.miles} mi from us — under our{' '}
+                        {feeInfo.freeRadius}-mile free radius. Just pay for the
+                        clothes in person when the driver arrives.
+                      </p>
+                    </>
+                  )}
+                  {!feeLoading && !feeError && feeInfo && !feeInfo.free && (
+                    <>
+                      <div className="flex items-baseline justify-between mb-1">
+                        <p className="font-bold text-white">Delivery fee</p>
+                        <p className="text-2xl font-black text-red-400 tabular-nums">
+                          ${feeInfo.total.toFixed(2)}
+                        </p>
+                      </div>
+                      <p className="text-neutral-400 text-xs mb-3">
+                        {feeInfo.miles} mi × ${feeInfo.perMileRate.toFixed(2)}/mi.
+                        First {feeInfo.freeRadius} mi are normally free, but
+                        your address is outside that zone.
+                      </p>
+                      <label className="flex items-start gap-2 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={agreed}
+                          onChange={(e) => setAgreed(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 accent-red-600 cursor-pointer"
+                        />
+                        <span className="text-xs text-neutral-300 group-hover:text-white transition-colors">
+                          I agree to pay{' '}
+                          <strong className="text-white">
+                            ${feeInfo.total.toFixed(2)}
+                          </strong>{' '}
+                          in cash to the driver when they arrive.
+                        </span>
+                      </label>
+                    </>
+                  )}
+                </div>
+              )}
 
               {error && <p className="text-sm text-red-500">{error}</p>}
 
               <button
                 type="button"
                 onClick={handleSubmitDelivery}
-                disabled={loading || !address || !selectedSlot}
+                disabled={
+                  loading ||
+                  !address ||
+                  !selectedSlot ||
+                  feeLoading ||
+                  !feeInfo ||
+                  (!feeInfo.free && !agreed)
+                }
                 className={btnPrimaryCls}
               >
                 {loading ? 'Submitting…' : 'Confirm request'}

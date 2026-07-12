@@ -14,6 +14,8 @@ interface DeliveryNotifyPayload {
   address: string;
   scheduledAt: string;           // "YYYY-MM-DDTHH:mm:ss" local (CT)
   scheduledDay: 'today' | 'tomorrow';
+  deliveryFee: number;           // 0 si free
+  distanceMiles: number;
 }
 
 /**
@@ -97,12 +99,16 @@ function buildBody(d: DeliveryNotifyPayload): string {
   const address = d.address.length > 80
     ? d.address.slice(0, 77) + '…'
     : d.address;
+  const feeLine = d.deliveryFee > 0
+    ? `Collect $${d.deliveryFee.toFixed(2)} cash on arrival (${d.distanceMiles} mi)`
+    : `Free — under 5 mi (${d.distanceMiles} mi)`;
 
   return [
     'Rudewear: new delivery',
     `${d.customerName} · ${phone}`,
     when,
     address,
+    feeLine,
     'https://rudewear.lafayettelamarket.com/admin/deliveries',
   ].join('\n');
 }

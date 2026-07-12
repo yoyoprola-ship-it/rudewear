@@ -247,7 +247,35 @@ function DeliveryRow({
           >
             {d.address}
           </a>
+          {typeof d.distanceMiles === 'number' && (
+            <span className="text-neutral-500 ml-2 text-xs">
+              · {d.distanceMiles} mi
+            </span>
+          )}
         </p>
+        {typeof d.deliveryFee === 'number' && (
+          <p className="text-sm mb-1">
+            <span className="text-neutral-500 uppercase tracking-wider text-[10px] font-bold mr-1">
+              Fee
+            </span>
+            {d.deliveryFee > 0 ? (
+              <span className="text-red-400 font-bold">
+                ${d.deliveryFee.toFixed(2)} cash on arrival
+                {d.agreedToPayOnArrival ? (
+                  <span className="ml-2 text-xs text-green-400 font-normal">
+                    ✓ customer agreed
+                  </span>
+                ) : (
+                  <span className="ml-2 text-xs text-amber-400 font-normal">
+                    ⚠ not agreed
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="text-green-400">Free (under 5 mi)</span>
+            )}
+          </p>
+        )}
         {d.notes && (
           <p className="text-sm text-neutral-400 mt-2 border-l-2 border-neutral-700 pl-3">
             <span className="text-neutral-500 uppercase tracking-wider text-[10px] font-bold block mb-0.5">

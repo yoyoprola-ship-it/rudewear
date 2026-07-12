@@ -95,6 +95,14 @@ export interface Delivery {
   scheduledAt: string;             // e.g., '2026-05-28T15:00:00'
   scheduledDay: 'today' | 'tomorrow';
   status: DeliveryStatus;
+  // Delivery fee — recomputado server-side al persistir. Es informativo:
+  // el driver cobra en efectivo cuando llega. Free = 0.
+  distanceMiles: number;           // driving one-way desde DELIVERY_ORIGIN
+  deliveryFee: number;             // 0 si <5mi; miles×$1.50 si ≥5mi
+  // Cliente marcó el checkbox aceptando pagar el fee en cash al llegar.
+  // Solo se pide/valida si deliveryFee > 0. Guardamos siempre para
+  // auditoría (una eventual disputa "yo no acepté esto").
+  agreedToPayOnArrival: boolean;
   createdAt?: FirestoreTimestampish;
   updatedAt?: FirestoreTimestampish;
   confirmedAt?: FirestoreTimestampish;
