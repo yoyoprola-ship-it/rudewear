@@ -28,6 +28,10 @@ export interface Product {
   active: boolean;
   createdAt?: FirestoreTimestampish;
   updatedAt?: FirestoreTimestampish;
+  // Analytics — incrementado por /api/track-view cuando un browser
+  // visita el detail card por primera vez (dedup via localStorage).
+  // Admin-only display: contador de usuarios únicos aproximado.
+  viewCount?: number;
 }
 
 export interface Category {

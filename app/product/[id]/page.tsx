@@ -25,6 +25,35 @@ export default function ProductDetailPage() {
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
 
+  // Track view — solo 1 vez por browser + producto. Dedup via
+  // localStorage: la primera visita incrementa el contador en Firestore
+  // via /api/track-view; visitas subsecuentes del mismo browser
+  // (refresh, back button) NO cuentan. Best-effort — errores se
+  // ignoran silenciosamente para no ensuciar la UI.
+  useEffect(() => {
+    if (!params?.id || typeof window === 'undefined') return;
+    try {
+      const KEY = 'rw_viewed';
+      const raw = localStorage.getItem(KEY);
+      const viewed: Record<string, boolean> = raw ? JSON.parse(raw) : {};
+      if (viewed[params.id]) return;
+      // Optimistic: marcamos como visto YA para bloquear double-fires
+      // por el StrictMode double-invoke en dev.
+      viewed[params.id] = true;
+      localStorage.setItem(KEY, JSON.stringify(viewed));
+      fetch('/api/track-view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: params.id }),
+        keepalive: true,
+      }).catch((err) => {
+        console.warn('[track-view] failed (non-fatal):', err);
+      });
+    } catch (err) {
+      console.warn('[track-view] localStorage failed (non-fatal):', err);
+    }
+  }, [params?.id]);
+
   useEffect(() => {
     if (!params?.id) return;
     (async () => {

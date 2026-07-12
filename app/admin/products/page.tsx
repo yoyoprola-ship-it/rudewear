@@ -11,6 +11,14 @@ import {
   isLowStock,
 } from '@/app/types';
 
+// Formato compacto de views: 1234 → "1.2K", 1500000 → "1.5M".
+// Ayuda a mantener la columna angosta cuando el contador crece.
+function formatViewCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
 export default function ProductListPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -135,6 +143,7 @@ export default function ProductListPage() {
                 <th className="text-left px-4 py-2 font-bold">Product</th>
                 <th className="text-left px-4 py-2 font-bold">Category</th>
                 <th className="text-center px-4 py-2 font-bold">Supplier</th>
+                <th className="text-right px-4 py-2 font-bold" title="Unique views (approx — deduped per browser)">Views</th>
                 <th className="text-right px-4 py-2 font-bold">Stock</th>
                 <th className="text-right px-4 py-2 font-bold">Cost</th>
                 <th className="text-right px-4 py-2 font-bold">Sell</th>
@@ -202,6 +211,17 @@ export default function ProductListPage() {
                           —
                         </span>
                       )}
+                    </td>
+                    <td
+                      className="px-4 py-3 text-right text-neutral-300"
+                      title="Unique views (deduped per browser)"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <span className="text-neutral-600">👁</span>
+                        <span className="font-bold tabular-nums">
+                          {formatViewCount(p.viewCount || 0)}
+                        </span>
+                      </span>
                     </td>
                     <td
                       className={`px-4 py-3 text-right font-bold ${
