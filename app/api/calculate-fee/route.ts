@@ -4,6 +4,7 @@ import {
   deliveryFeeBreakdown,
   MAX_DELIVERY_RADIUS_MILES,
 } from '@/app/lib/pricing';
+import { getClientIp, rateLimitOr429 } from '@/app/lib/rateLimit';
 
 // POST /api/calculate-fee
 // Body: { address: string }
@@ -18,6 +19,17 @@ import {
 // persistir para que el cliente no pueda mandar un fee=0 falseado.
 
 export async function POST(request: NextRequest) {
+  // Público — el modal lo llama con debounce 500ms mientras el user
+  // escribe la address. 60/min per IP acomoda tipeo normal pero para
+  // un bot que quiera vaciar el bucket de Distance Matrix (paga por
+  // request).
+  const ip = getClientIp(request.headers);
+  const ipRl = await rateLimitOr429(`rw-calculate-fee-ip:${ip}`, {
+    maxRequests: 60,
+    windowMs: 60_000,
+  });
+  if (ipRl) return ipRl;
+
   let address: string;
   try {
     const body = await request.json();

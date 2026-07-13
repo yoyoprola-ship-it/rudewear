@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/app/lib/firebaseAdmin';
+import { getClientIp, rateLimitOr429 } from '@/app/lib/rateLimit';
 
 // POST /api/track-view
 // Body: { productId: string }
@@ -14,6 +15,17 @@ import { adminDb } from '@/app/lib/firebaseAdmin';
 // si el producto no existe, devolvemos 404 pero no rompemos la UI.
 
 export async function POST(request: NextRequest) {
+  // Sin auth — cualquier browser suma views. El dedupe es client-side
+  // (localStorage), pero un actor malicioso puede saltarse eso. IP cap:
+  // 30/min tolera navegación normal pero corta un script que quiera
+  // inflar el viewCount de un producto.
+  const ip = getClientIp(request.headers);
+  const ipRl = await rateLimitOr429(`rw-track-view-ip:${ip}`, {
+    maxRequests: 30,
+    windowMs: 60_000,
+  });
+  if (ipRl) return ipRl;
+
   let productId: string;
   try {
     const body = await request.json();

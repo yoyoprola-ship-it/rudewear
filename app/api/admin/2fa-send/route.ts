@@ -4,6 +4,11 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/app/lib/firebaseAdmin';
 import { requireAdminWithoutTwoFactor } from '@/app/lib/adminApiAuth';
 import { maskEmail } from '@/app/lib/maskEmail';
+import {
+  getClientIp,
+  rateLimitOr429,
+  userRateLimitOr429,
+} from '@/app/lib/rateLimit';
 
 // POST /api/admin/2fa-send
 // Header: Authorization: Bearer <Firebase ID token>
@@ -36,8 +41,26 @@ function escapeHtml(s: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  // IP rate limit ANTES de la auth — un atacante sin token puede
+  // martillar el endpoint y consumir CPU verificando tokens inválidos.
+  const ip = getClientIp(request.headers);
+  const ipRl = await rateLimitOr429(`rw-admin-2fa-send-ip:${ip}`, {
+    maxRequests: 10,
+    windowMs: 60_000,
+  });
+  if (ipRl) return ipRl;
+
   const caller = await requireAdminWithoutTwoFactor(request);
   if (!caller.ok) return caller.response;
+
+  // Per-uid: 5 requests cada 30 min. Un admin comprometido no puede
+  // spamear emails al mail-box del admin (aunque el cooldown de 60s
+  // ya lo limita, esto añade una capa acumulativa).
+  const uidRl = await userRateLimitOr429('rw-admin-2fa-send', caller.uid, {
+    maxRequests: 5,
+    windowMs: 30 * 60 * 1000,
+  });
+  if (uidRl) return uidRl;
 
   const adminEmail =
     typeof caller.data.email === 'string'

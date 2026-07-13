@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '@/app/lib/firebaseAdmin';
+import {
+  getClientIp,
+  rateLimitOr429,
+  userRateLimitOr429,
+} from '@/app/lib/rateLimit';
 
 // POST /api/admin/broadcast-sms
 // Header: Authorization: Bearer <Firebase ID token>
@@ -35,6 +40,15 @@ interface SendResult {
 }
 
 export async function POST(request: NextRequest) {
+  // IP rate limit — 30/min. Un broadcast normal es 1 request; 30 tolera
+  // el admin re-tratando bajo errores transitorios sin bloquear.
+  const ip = getClientIp(request.headers);
+  const ipRl = await rateLimitOr429(`rw-broadcast-sms-ip:${ip}`, {
+    maxRequests: 30,
+    windowMs: 60_000,
+  });
+  if (ipRl) return ipRl;
+
   // ── Auth: admin only ──────────────────────────────────
   const authHeader = request.headers.get('Authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
@@ -60,6 +74,14 @@ export async function POST(request: NextRequest) {
     console.error('[broadcast-sms] role check failed:', err);
     return NextResponse.json({ error: 'Auth error' }, { status: 500 });
   }
+
+  // Per-uid — 10 broadcasts / min. Un uid legítimo casi nunca sobrepasa
+  // esto; si lo hace es porque hay un loop en el UI o alguien empujando.
+  const uidRl = await userRateLimitOr429('rw-broadcast-sms', uid, {
+    maxRequests: 10,
+    windowMs: 60_000,
+  });
+  if (uidRl) return uidRl;
 
   // ── Parse body ────────────────────────────────────────
   let body: Body;

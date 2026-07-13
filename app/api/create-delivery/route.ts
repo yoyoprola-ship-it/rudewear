@@ -7,6 +7,11 @@ import {
   calculateDeliveryFee,
   MAX_DELIVERY_RADIUS_MILES,
 } from '@/app/lib/pricing';
+import {
+  getClientIp,
+  rateLimitOr429,
+  userRateLimitOr429,
+} from '@/app/lib/rateLimit';
 
 // POST /api/create-delivery
 // Body: {
@@ -34,6 +39,16 @@ interface Body {
 }
 
 export async function POST(request: NextRequest) {
+  // IP rate limit. Endpoint público — 10/min tolera un customer que
+  // pruebe pero corta un script que quiera reventar Distance Matrix
+  // (cada create llama Google + Twilio, cuesta plata).
+  const ip = getClientIp(request.headers);
+  const ipRl = await rateLimitOr429(`rw-create-delivery-ip:${ip}`, {
+    maxRequests: 10,
+    windowMs: 60_000,
+  });
+  if (ipRl) return ipRl;
+
   // Verify auth
   const authHeader = request.headers.get('Authorization') || '';
   const token = authHeader.startsWith('Bearer ')
@@ -60,6 +75,15 @@ export async function POST(request: NextRequest) {
     console.error('[create-delivery] token verify failed:', err);
     return NextResponse.json({ error: 'Invalid auth token' }, { status: 401 });
   }
+
+  // Per-uid: 5 reservas por hora. Un customer legítimo no debería
+  // pasar de esto (ni siquiera con visits repetidas). Cap concreto
+  // que evita abuse via cuenta comprometida sin bloquear uso real.
+  const uidRl = await userRateLimitOr429('rw-create-delivery', uid, {
+    maxRequests: 5,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (uidRl) return uidRl;
 
   // Parse + validate body
   let body: Body;

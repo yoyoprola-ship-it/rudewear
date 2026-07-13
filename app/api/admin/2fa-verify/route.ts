@@ -3,6 +3,11 @@ import crypto from 'crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/app/lib/firebaseAdmin';
 import { requireAdminWithoutTwoFactor } from '@/app/lib/adminApiAuth';
+import {
+  getClientIp,
+  rateLimitOr429,
+  userRateLimitOr429,
+} from '@/app/lib/rateLimit';
 
 // POST /api/admin/2fa-verify
 // Body: { code: string (6 digits) }
@@ -32,8 +37,27 @@ interface Body {
 }
 
 export async function POST(request: NextRequest) {
+  // IP rate limit ANTES de la auth. 20/min per IP — más liberal que
+  // send porque cada verify consume un attempt del bucket in-doc, que
+  // corta después de 3. La defensa profunda es contra distintos IPs
+  // atacando el mismo código guessing.
+  const ip = getClientIp(request.headers);
+  const ipRl = await rateLimitOr429(`rw-admin-2fa-verify-ip:${ip}`, {
+    maxRequests: 20,
+    windowMs: 60_000,
+  });
+  if (ipRl) return ipRl;
+
   const caller = await requireAdminWithoutTwoFactor(request);
   if (!caller.ok) return caller.response;
+
+  // Per-uid: 10 tries cada 5 min. Cubre el caso de que el admin corra
+  // varios códigos concurrentes (raro, pero por seguridad).
+  const uidRl = await userRateLimitOr429('rw-admin-2fa-verify', caller.uid, {
+    maxRequests: 10,
+    windowMs: 5 * 60 * 1000,
+  });
+  if (uidRl) return uidRl;
 
   let body: Body;
   try {
