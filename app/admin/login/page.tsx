@@ -37,6 +37,13 @@ export default function AdminLoginPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [resendCooldown, setResendCooldown] = useState(0);
   const recaptchaRef = useRef<HTMLDivElement>(null);
+  // Flag para que el onAuthChange listener no dispare requestEmailCode
+  // en paralelo cuando el user ya arrancó el flow manualmente. Sin esto
+  // se producía un race: confirmSmsCode cambia auth state, el listener
+  // se disparaba, llamaba requestEmailCode al mismo tiempo que
+  // handleVerifySms, el segundo call comía 429 (cooldown) y con un
+  // closure stale de `step='phone'` hacía signOut → 'Session expired'.
+  const userInitiated = useRef(false);
 
   // Si ya está logueado:
   //   - admin + 2FA fresco → dashboard
@@ -45,6 +52,12 @@ export default function AdminLoginPage() {
   //   - no admin → dejar el login normal
   useEffect(() => {
     const unsub = onAuthChange(async (user) => {
+      // Si el user ya arrancó el flow (typeó phone y clickeó Send code),
+      // dejamos que las funciones manuales manejen todo. El listener
+      // acá solo cubre el caso de "llegué a /admin/login con sesión
+      // previa" (redirect del layout por 2FA stale).
+      if (userInitiated.current) return;
+
       if (!user) {
         setCheckingAuth(false);
         return;
@@ -69,6 +82,7 @@ export default function AdminLoginPage() {
           return;
         }
         // Stale/missing → re-verify por email sin pedir phone again.
+        userInitiated.current = true;
         setCheckingAuth(false);
         await requestEmailCode();
       } catch (err) {
@@ -103,6 +117,10 @@ export default function AdminLoginPage() {
       setError('Enter a valid 10-digit US phone number.');
       return;
     }
+    // A partir de acá el user está manejando el flow; el listener de
+    // onAuthChange no debe auto-disparar 2FA cuando confirmSmsCode
+    // cambie el auth state.
+    userInitiated.current = true;
     setLoading(true);
     try {
       // Pre-flight: chequear que el phone SEA de un admin antes de
@@ -202,14 +220,13 @@ export default function AdminLoginPage() {
         } else {
           setError(data.error || `Failed to send email code (status ${res.status})`);
         }
-        // Si venís del SMS verify sin poder entrar → no dejar la sesión
-        // colgada; deslogueá.
-        if (step !== 'email2fa') {
-          try {
-            const { signOut } = await import('@/app/lib/auth');
-            await signOut();
-          } catch {}
-        }
+        // Movemos al step email2fa igual — el user está signed-in vía
+        // SMS. Desde ahí puede clickear 'Resend code' cuando pase el
+        // cooldown, o 'Cancel & sign out' explícito si quiere salir.
+        // No hacemos signOut acá para no romper la sesión de Firebase
+        // que costó un SMS.
+        setStep('email2fa');
+        setResendCooldown(60);
         return;
       }
       if (data.maskedEmail) setMaskedEmail(data.maskedEmail);
@@ -273,6 +290,8 @@ export default function AdminLoginPage() {
     setEmailCode('');
     setError('');
     setMaskedEmail('');
+    // Reset del flag para que un próximo intento manual funcione limpio.
+    userInitiated.current = false;
   };
 
   if (checkingAuth) {
