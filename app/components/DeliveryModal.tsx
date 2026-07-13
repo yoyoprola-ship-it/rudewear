@@ -539,9 +539,8 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
                         </p>
                       </div>
                       <p className="text-neutral-400 text-xs mb-3">
-                        {feeInfo.miles} mi × ${feeInfo.perMileRate.toFixed(2)}/mi.
-                        First {feeInfo.freeRadius} mi are normally free, but
-                        your address is outside that zone.
+                        {feeInfo.miles} mi from us. First {feeInfo.freeRadius} mi
+                        are normally free, but your address is outside that zone.
                       </p>
                       <label className="flex items-start gap-2 cursor-pointer group">
                         <input
