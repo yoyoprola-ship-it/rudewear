@@ -2,12 +2,18 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { doc, getDoc } from 'firebase/firestore';
 import { onAuthChange, isAdmin, signOut } from '@/app/lib/auth';
+import { db } from '@/app/lib/firebase';
 import type { User } from 'firebase/auth';
 
-// Layout que protege /admin/**. Verifica sesión + role='admin'.
-// Si no autenticado → /admin/login.
-// Si autenticado pero no admin → sign out + /admin/login.
+// Layout que protege /admin/**. Verifica tres cosas:
+//   1. Sesión Firebase activa
+//   2. users/{uid}.role === 'admin'
+//   3. users/{uid}.admin2faPassedAt existe y es < 30 min
+// Si falla algo → /admin/login (respetando el step correcto).
+
+const ADMIN_2FA_WINDOW_MS = 30 * 60 * 1000;
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -31,6 +37,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       const admin = await isAdmin(u.uid);
       if (!admin) {
         await signOut();
+        router.replace('/admin/login');
+        return;
+      }
+      // 2FA freshness gate. Leemos admin2faPassedAt del user doc.
+      // Si falta o es viejo, mandamos al login para re-verify (sin
+      // deslogueuar — el login page dispara el email code y termina
+      // volviendo acá cuando el flag esté fresco).
+      try {
+        const snap = await getDoc(doc(db, 'users', u.uid));
+        const data = snap.data() as { admin2faPassedAt?: { toMillis: () => number } } | undefined;
+        const passedAt = data?.admin2faPassedAt;
+        const passedMs =
+          passedAt && typeof passedAt.toMillis === 'function'
+            ? passedAt.toMillis()
+            : 0;
+        if (!passedMs || Date.now() - passedMs > ADMIN_2FA_WINDOW_MS) {
+          router.replace('/admin/login');
+          return;
+        }
+      } catch (err) {
+        console.error('[admin-layout] 2fa check failed:', err);
         router.replace('/admin/login');
         return;
       }
