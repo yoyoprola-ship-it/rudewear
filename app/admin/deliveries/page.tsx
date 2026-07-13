@@ -269,7 +269,7 @@ function DeliveryRow({
             </span>
             {d.deliveryFee > 0 ? (
               <span className="text-red-400 font-bold">
-                ${d.deliveryFee.toFixed(2)} cash on arrival
+                ${d.deliveryFee.toFixed(2)} card or cash on arrival
                 {d.agreedToPayOnArrival ? (
                   <span className="ml-2 text-xs text-green-400 font-normal">
                     ✓ customer agreed

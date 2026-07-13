@@ -100,7 +100,7 @@ function buildBody(d: DeliveryNotifyPayload): string {
     ? d.address.slice(0, 77) + '…'
     : d.address;
   const feeLine = d.deliveryFee > 0
-    ? `Collect $${d.deliveryFee.toFixed(2)} cash on arrival (${d.distanceMiles} mi)`
+    ? `Collect $${d.deliveryFee.toFixed(2)} card/cash on arrival (${d.distanceMiles} mi)`
     : `Free — under 5 mi (${d.distanceMiles} mi)`;
 
   return [

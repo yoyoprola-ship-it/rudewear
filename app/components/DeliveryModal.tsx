@@ -555,7 +555,7 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
                           <strong className="text-white">
                             ${feeInfo.total.toFixed(2)}
                           </strong>{' '}
-                          in cash to the driver when they arrive.
+                          by card or cash to the driver when they arrive.
                         </span>
                       </label>
                     </>

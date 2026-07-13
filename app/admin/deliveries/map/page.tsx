@@ -380,7 +380,7 @@ function SidebarRow({
             <p className="text-[11px] text-neutral-500 mt-0.5">
               {d.distanceMiles} mi ·{' '}
               {d.deliveryFee > 0
-                ? `$${d.deliveryFee.toFixed(2)} cash`
+                ? `$${d.deliveryFee.toFixed(2)} card/cash`
                 : 'Free'}
             </p>
           )}

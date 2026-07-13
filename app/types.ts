@@ -104,7 +104,7 @@ export interface Delivery {
   // docs viejos o los que fallaron el geocode no lo tienen.
   lat?: number;
   lng?: number;
-  // Cliente marcó el checkbox aceptando pagar el fee en cash al llegar.
+  // Cliente marcó el checkbox aceptando pagar el fee (card o cash) al llegar.
   // Solo se pide/valida si deliveryFee > 0. Guardamos siempre para
   // auditoría (una eventual disputa "yo no acepté esto").
   agreedToPayOnArrival: boolean;

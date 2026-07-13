@@ -25,9 +25,9 @@ import {
 // fee server-side (no confía en el cliente), y usa Admin SDK para
 // escribir bypasseando las rules admin-only.
 //
-// Pagos: el driver cobra en cash al arribar. Si el fee > 0 el cliente
-// debió marcar el checkbox de acuerdo en el modal — validamos que la
-// flag venga en true, sino rechazamos.
+// Pagos: el driver cobra al arribar (tarjeta o efectivo). Si el fee
+// > 0 el cliente debió marcar el checkbox de acuerdo en el modal —
+// validamos que la flag venga en true, sino rechazamos.
 
 interface Body {
   address?: string;
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          'You must agree to pay the delivery fee in cash when the driver arrives.',
+          'You must agree to pay the delivery fee by card or cash when the driver arrives.',
       },
       { status: 400 }
     );
