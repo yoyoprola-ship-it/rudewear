@@ -90,6 +90,94 @@ export async function notifyAdminOfNewDelivery(
   }
 }
 
+interface CancellationNotifyPayload {
+  customerName: string;
+  customerPhone: string;
+  address: string;
+  scheduledAt: string;
+  scheduledDay: 'today' | 'tomorrow';
+  previousStatus: 'requested' | 'confirmed';
+}
+
+/**
+ * Manda SMS al ADMIN_PHONE avisando que un cliente canceló su reserva.
+ * Especialmente crítico si el estado era `confirmed` porque el driver
+ * podría estar en camino. Mismo modelo fire-and-forget.
+ */
+export async function notifyAdminOfCancellation(
+  d: CancellationNotifyPayload
+): Promise<void> {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+  const rawAdminPhone = process.env.ADMIN_PHONE;
+
+  if (!accountSid || !authToken || !fromNumber || !rawAdminPhone) {
+    console.warn('[notifyAdmin] Missing Twilio env — skipping cancel SMS');
+    return;
+  }
+
+  const adminDigits = rawAdminPhone.replace(/\D/g, '');
+  let toE164: string;
+  if (adminDigits.length === 10) toE164 = `+1${adminDigits}`;
+  else if (adminDigits.length === 11 && adminDigits.startsWith('1'))
+    toE164 = `+${adminDigits}`;
+  else toE164 = `+${adminDigits}`;
+
+  const phone = formatPhone(d.customerPhone);
+  const when = formatWhen(d.scheduledAt, d.scheduledDay);
+  const address = d.address.length > 80
+    ? d.address.slice(0, 77) + '…'
+    : d.address;
+  // Prefix urgent para reservas ya confirmadas — el driver puede estar
+  // en camino y necesita saber ahora, no cuando abra el panel.
+  const header = d.previousStatus === 'confirmed'
+    ? '⚠ Rudewear: CONFIRMED delivery cancelled'
+    : 'Rudewear: delivery cancelled';
+  const body = [
+    header,
+    `${d.customerName} · ${phone}`,
+    when,
+    address,
+    'https://rudewear.lafayettelamarket.com/admin/deliveries',
+  ].join('\n');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+    const params = new URLSearchParams({
+      To: toE164,
+      From: fromNumber,
+      Body: body,
+    });
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${Buffer.from(
+          `${accountSid}:${authToken}`
+        ).toString('base64')}`,
+      },
+      body: params.toString(),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const result = await res.json().catch(() => ({}));
+      console.error('[notifyAdmin] Twilio cancel error:', {
+        code: result?.code,
+        status: res.status,
+      });
+      return;
+    }
+    console.log('[notifyAdmin] SMS sent to admin about cancellation');
+  } catch (err) {
+    console.error('[notifyAdmin] cancel SMS send failed:', err);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function buildBody(d: DeliveryNotifyPayload): string {
   const phone = formatPhone(d.customerPhone);
   const when = formatWhen(d.scheduledAt, d.scheduledDay);

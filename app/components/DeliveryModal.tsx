@@ -588,12 +588,21 @@ export default function DeliveryModal({ open, onClose }: DeliveryModalProps) {
                 ✓
               </div>
               <p className="text-lg font-black uppercase mb-2">Reservation received</p>
-              <p className="text-sm text-neutral-400 mb-6">
+              <p className="text-sm text-neutral-400 mb-4">
                 We&apos;ll call you at{' '}
                 <strong className="text-white">
                   {formatPhoneDisplay(phone || existingName ? phone : phone)}
                 </strong>{' '}
                 when the driver is near your door.
+              </p>
+              <p className="text-xs text-neutral-500 mb-6">
+                Need to cancel later?{' '}
+                <a
+                  href="/my-deliveries"
+                  className="underline decoration-neutral-700 hover:text-neutral-300"
+                >
+                  Manage your reservation
+                </a>
               </p>
               <button onClick={resetAndClose} className={btnPrimaryCls}>
                 Close

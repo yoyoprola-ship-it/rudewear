@@ -111,6 +111,15 @@ function HomeContent() {
               >
                 Request delivery service
               </button>
+              <p className="mt-4 text-xs text-neutral-500">
+                Already booked?{' '}
+                <a
+                  href="/my-deliveries"
+                  className="underline decoration-neutral-700 hover:text-neutral-300 hover:decoration-neutral-500"
+                >
+                  Manage or cancel your reservation
+                </a>
+              </p>
             </div>
           </>
         )}
