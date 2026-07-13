@@ -105,6 +105,30 @@ export default function AdminLoginPage() {
     }
     setLoading(true);
     try {
+      // Pre-flight: chequear que el phone SEA de un admin antes de
+      // que Firebase mande el SMS (que cuesta plata). Si no, cortamos
+      // acá con un error claro y sin gastar SMS.
+      const preRes = await fetch('/api/admin/check-phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: digits }),
+      });
+      const preData = await preRes.json().catch(() => ({}));
+      if (!preRes.ok) {
+        if (preRes.status === 429) {
+          setError('Too many attempts from your network. Wait a minute.');
+        } else {
+          setError(preData.error || 'Could not verify phone. Try again.');
+        }
+        setLoading(false);
+        return;
+      }
+      if (!preData.canLogin) {
+        setError('This phone is not registered as admin.');
+        setLoading(false);
+        return;
+      }
+
       if (!recaptchaRef.current) throw new Error('reCAPTCHA container missing.');
       setupRecaptcha(recaptchaRef.current.id);
       await sendSmsCode(digits);
